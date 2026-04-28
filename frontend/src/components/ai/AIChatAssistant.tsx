@@ -35,7 +35,7 @@ export default function AIChatAssistant({ selectedModel, currentCode, language, 
   const [chatModel, setChatModel] = useState(selectedModel);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
+  const API_BASE = import.meta.env.VITE_API_URL || '';
   // Fetch available models from backend
   useEffect(() => {
     fetchModels();
@@ -81,7 +81,7 @@ export default function AIChatAssistant({ selectedModel, currentCode, language, 
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/ai/chat', {
+        const response = await fetch(`${API_BASE}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

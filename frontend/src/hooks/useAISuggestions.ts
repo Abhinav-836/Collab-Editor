@@ -5,11 +5,13 @@ interface UseAISuggestionsOptions {
   enabled?: boolean;
 }
 
+// Use environment variable for API URL
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export function useAISuggestions(options: UseAISuggestionsOptions = {}) {
   const { debounceMs = 500, enabled = true } = options;
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  // FIXED: Changed NodeJS.Timeout to ReturnType<typeof setTimeout>
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const fetchSuggestions = useCallback(async (code: string, language: string) => {
@@ -17,7 +19,7 @@ export function useAISuggestions(options: UseAISuggestionsOptions = {}) {
     
     setIsLoading(true);
     try {
-      const response = await fetch('/api/ai/suggest', {
+      const response = await fetch(`${API_BASE}/api/ai/suggest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, language })

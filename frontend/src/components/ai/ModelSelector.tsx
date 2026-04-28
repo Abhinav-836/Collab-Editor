@@ -23,9 +23,11 @@ export default function ModelSelector({ selectedModel, onModelChange }: ModelSel
     fetchModels();
   }, []);
 
+  const API_BASE = import.meta.env.VITE_API_URL || '';
+
   const fetchModels = async () => {
     try {
-      const response = await fetch('/api/ai/models');
+        const response = await fetch(`${API_BASE}/api/ai/models`);
       const data = await response.json();
       if (data.success && data.models && data.models.length > 0) {
         setModels(data.models);
