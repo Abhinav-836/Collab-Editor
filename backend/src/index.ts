@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebSocketHandler } from './websocket/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './middleware/logger.js';
-import { aiRoutes } from './api/ai/index.js';  // ADD THIS LINE
+import { aiRoutes } from './api/ai/index.js';
 
 dotenv.config();
 
@@ -20,10 +20,30 @@ const PORT = process.env.PORT || 8080;
 // In-memory storage
 const rooms = new Map();
 
-// Middleware
+// ============ CORS CONFIGURATION ============
+// Parse allowed origins from environment variable or use defaults
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : ['http://localhost:5173', 'https://collab-editor-ruby-beta.vercel.app'];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : ['http://localhost:5173', 'https://collab-editor-ruby-beta.vercel.app','https://collab-editor-ruby-beta.vercel.app']
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      console.log(`❌ CORS blocked: ${origin}`);
+      return callback(new Error('Not allowed by CORS'), false);
+    }
+    
+    console.log(`✅ CORS allowed: ${origin}`);
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(logger);
 
@@ -77,7 +97,7 @@ app.get('/api/rooms', (req, res) => {
 });
 
 // ============ AI ROUTES ============
-app.use('/api/ai', aiRoutes);  // ADD THIS LINE
+app.use('/api/ai', aiRoutes);
 
 // ============ HEALTH CHECK ============
 
@@ -115,6 +135,7 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
   console.log(`💾 Using in-memory storage`);
+  console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}`);
 });
 
 export { app, server };
