@@ -1,53 +1,71 @@
-// Use environment variable for production, fallback to relative path for local
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// 🔥 Always resolve correct base URL
+const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/$/, '');
+
+if (!API_BASE) {
+  console.warn("⚠️ VITE_API_URL is not set. API calls may fail in production.");
+}
+
+// 🔥 Reusable request helper (prevents JSON crash)
+async function request(url: string, options?: RequestInit) {
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers || {}),
+    },
+    ...options,
+  });
+
+  // 🔴 Handle non-JSON safely (fixes your 'Unexpected token T' bug)
+  const contentType = res.headers.get("content-type");
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("❌ API Error:", errorText);
+    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  }
+
+  if (!contentType || !contentType.includes("application/json")) {
+    const text = await res.text();
+    console.error("❌ Non-JSON response:", text);
+    throw new Error("Invalid server response");
+  }
+
+  return res.json();
+}
 
 export const apiService = {
   async createRoom(): Promise<{ success: boolean; roomId: string }> {
-    const response = await fetch(`${API_BASE}/rooms`, { method: 'POST' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response.json();
+    return request(`${API_BASE}/api/rooms`, {
+      method: "POST",
+    });
   },
 
   async getRoom(roomId: string): Promise<any> {
-    const response = await fetch(`${API_BASE}/rooms/${roomId}`);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response.json();
+    return request(`${API_BASE}/api/rooms/${roomId}`);
   },
 
   async deleteRoom(roomId: string): Promise<{ success: boolean }> {
-    const response = await fetch(`${API_BASE}/rooms/${roomId}`, { method: 'DELETE' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response.json();
+    return request(`${API_BASE}/api/rooms/${roomId}`, {
+      method: "DELETE",
+    });
   },
 
-  async getAISuggestions(code: string, language: string, position: number): Promise<string[]> {
-    const response = await fetch(`${API_BASE}/ai/suggest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language, position })
+  async getAISuggestions(
+    code: string,
+    language: string,
+    position: number
+  ): Promise<string[]> {
+    const data = await request(`${API_BASE}/api/ai/suggest`, {
+      method: "POST",
+      body: JSON.stringify({ code, language, position }),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const data = await response.json();
     return data.suggestions || [];
   },
 
   async explainCode(code: string, language: string): Promise<any> {
-    const response = await fetch(`${API_BASE}/ai/explain`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language })
+    return request(`${API_BASE}/api/ai/explain`, {
+      method: "POST",
+      body: JSON.stringify({ code, language }),
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response.json();
-  }
+  },
 };
