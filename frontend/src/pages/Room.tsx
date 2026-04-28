@@ -16,7 +16,6 @@ export default function Room() {
   const [documentContent, setDocumentContent] = useState('');
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [selectedModel, setSelectedModel] = useState('llama3.2');
-  // REMOVED: const [editorRef, setEditorRef] = useState<any>(null);
 
   const userIdRef = useRef(`${Math.random().toString(36).substring(7)}_${Date.now()}`);
   
@@ -28,8 +27,13 @@ export default function Room() {
   }, [userName, navigate]);
 
   useEffect(() => {
+    // Use environment variable for WebSocket URL if available
+    const WS_URL = import.meta.env.VITE_WS_URL || '';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws?roomId=${roomId}&userId=${userIdRef.current}&userName=${encodeURIComponent(userName)}`;
+    const baseUrl = WS_URL || `${protocol}//${window.location.host}`;
+    const wsUrl = `${baseUrl}/ws?roomId=${roomId}&userId=${userIdRef.current}&userName=${encodeURIComponent(userName)}`;
+    
+    console.log('🔌 Connecting to WebSocket:', wsUrl);
     const websocket = new WebSocket(wsUrl);
     
     websocket.onopen = () => {
