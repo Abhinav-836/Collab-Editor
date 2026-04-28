@@ -7,12 +7,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
+        target: 'https://collab-editor-qib6.onrender.com',
+        changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true
+        target: 'wss://collab-editor-qib6.onrender.com',
+        ws: true,
+        changeOrigin: true,
       }
     }
   }
