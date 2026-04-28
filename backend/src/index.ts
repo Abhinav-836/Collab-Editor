@@ -22,7 +22,7 @@ const rooms = new Map();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : ['http://localhost:5173', 'https://collab-editor-ruby-beta.vercel.app']
+  origin: process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : ['http://localhost:5173', 'https://collab-editor-ruby-beta.vercel.app','https://collab-editor-ruby-beta.vercel.app']
 }));
 app.use(express.json());
 app.use(logger);
