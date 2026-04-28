@@ -1,5 +1,5 @@
 import { ReactNode, useEffect } from 'react';
-import Button from './Button';
+// Remove: import Button from './Button';
 
 interface ModalProps {
   isOpen: boolean;
