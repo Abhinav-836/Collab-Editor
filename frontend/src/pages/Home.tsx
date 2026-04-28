@@ -18,12 +18,24 @@ export default function Home() {
     setError('');
     
     try {
-      const response = await fetch('/api/rooms', { method: 'POST' });
+      // Use the Render backend URL directly
+      const API_BASE = 'https://collab-editor-qib6.onrender.com';
+      const response = await fetch(`${API_BASE}/api/rooms`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
       const data = await response.json();
       navigate(`/room/${data.roomId}?userName=${encodeURIComponent(userName.trim())}`);
     } catch (error) {
       console.error('Failed to create room:', error);
-      setError('Failed to create room. Make sure backend is running on port 8080');
+      setError('Failed to create room. Please check if the backend is running.');
     } finally {
       setIsLoading(false);
     }

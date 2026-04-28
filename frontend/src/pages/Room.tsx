@@ -20,18 +20,8 @@ export default function Room() {
   const userIdRef = useRef(`${Math.random().toString(36).substring(7)}_${Date.now()}`);
   
   useEffect(() => {
-    if (!userName) {
-      navigate('/');
-      return;
-    }
-  }, [userName, navigate]);
-
-  useEffect(() => {
-    // Use environment variable for WebSocket URL if available
-    const WS_URL = import.meta.env.VITE_WS_URL || '';
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const baseUrl = WS_URL || `${protocol}//${window.location.host}`;
-    const wsUrl = `${baseUrl}/ws?roomId=${roomId}&userId=${userIdRef.current}&userName=${encodeURIComponent(userName)}`;
+    // Directly use the Render WebSocket URL
+    const wsUrl = `wss://collab-editor-qib6.onrender.com/ws?roomId=${roomId}&userId=${userIdRef.current}&userName=${encodeURIComponent(userName)}`;
     
     console.log('🔌 Connecting to WebSocket:', wsUrl);
     const websocket = new WebSocket(wsUrl);
