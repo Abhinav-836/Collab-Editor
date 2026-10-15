@@ -1,141 +1,80 @@
 import express from 'express';
+import cors from 'cors';
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import cors from 'cors';
 import dotenv from 'dotenv';
-import { v4 as uuidv4 } from 'uuid';
-import { WebSocketHandler } from './websocket/index.js';
-import { errorHandler } from './middleware/errorHandler.js';
+
+import { config } from './utils/config.js';
 import { logger } from './middleware/logger.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { rateLimiter } from './middleware/rateLimiter.js';
+
+import { healthCheck, detailedHealthCheck } from './api/health.js';
 import { aiRoutes } from './api/ai/index.js';
+import { createRoom, getRooms } from './api/rooms/createRoom.js';
+import { getRoom, getRoomStats } from './api/rooms/getRoom.js';
+import { deleteRoom } from './api/rooms/deleteRoom.js';
+
+import { WebSocketHandler } from './websocket/index.js';
+import { connectRedis, disconnectRedis } from './db/redis/client.js';
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
 
-const PORT = process.env.PORT || 8080;
-
-// In-memory storage
-const rooms = new Map();
-
-// ============ CORS CONFIGURATION ============
-// Parse allowed origins from environment variable or use defaults
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',')
-  : ['http://localhost:5173', 'https://collab-editor-ruby-beta.vercel.app'];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      console.log(`❌ CORS blocked: ${origin}`);
-      return callback(new Error('Not allowed by CORS'), false);
-    }
-    
-    console.log(`✅ CORS allowed: ${origin}`);
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.use(express.json());
+// Middleware
+app.use(cors({ origin: config.corsOrigin, credentials: true }));
+app.use(express.json({ limit: '5mb' }));
 app.use(logger);
+app.use(rateLimiter(config.rateLimit.maxRequests, config.rateLimit.windowMs));
 
-// ============ ROOM API ============
+// Health
+app.get('/health', healthCheck);
+app.get('/health/detailed', detailedHealthCheck);
 
-app.post('/api/rooms', (req, res) => {
-  const roomId = uuidv4().slice(0, 8);
-  const room = {
-    id: roomId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    users: [],
-    settings: {
-      language: 'javascript',
-      theme: 'vs-dark'
-    }
-  };
-  
-  rooms.set(roomId, room);
-  
-  res.status(201).json({
-    success: true,
-    roomId: roomId,
-    room: room
-  });
-});
-
-app.get('/api/rooms/:id', (req, res) => {
-  const room = rooms.get(req.params.id);
-  
-  if (!room) {
-    return res.status(404).json({ success: false, error: 'Room not found' });
-  }
-  
-  res.json({ success: true, room });
-});
-
-app.delete('/api/rooms/:id', (req, res) => {
-  const deleted = rooms.delete(req.params.id);
-  
-  if (!deleted) {
-    return res.status(404).json({ success: false, error: 'Room not found' });
-  }
-  
-  res.json({ success: true, message: 'Room deleted' });
-});
-
-app.get('/api/rooms', (req, res) => {
-  const allRooms = Array.from(rooms.values());
-  res.json({ success: true, rooms: allRooms });
-});
-
-// ============ AI ROUTES ============
+// AI Routes
 app.use('/api/ai', aiRoutes);
 
-// ============ HEALTH CHECK ============
+// Room Routes
+app.post('/api/rooms', createRoom);
+app.get('/api/rooms', getRooms);
+app.get('/api/rooms/:id', getRoom);
+app.get('/api/rooms/:id/stats', getRoomStats);
+app.delete('/api/rooms/:id', deleteRoom);
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    rooms: rooms.size
-  });
-});
-
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Collab Editor Backend',
-    version: '1.0.0',
-    status: 'running',
-    activeRooms: rooms.size
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
-});
-
-// Error handling
+// Error handler (last)
 app.use(errorHandler);
 
-// Initialize WebSocket
-const wsHandler = new WebSocketHandler(wss);
+// WebSocket
+const wss = new WebSocketServer({ server, path: '/ws' });
+new WebSocketHandler(wss);
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
-  console.log(`💾 Using in-memory storage`);
-  console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}`);
+// Boot
+async function start() {
+  try {
+    await connectRedis();
+  } catch (err) {
+    console.warn('⚠️ Redis not available, continuing without it:', err);
+  }
+
+  server.listen(config.port, () => {
+    console.log(`🚀 Server running on http://localhost:${config.port}`);
+    console.log(`🔌 WebSocket on ws://localhost:${config.port}/ws`);
+  });
+}
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down...');
+  await disconnectRedis();
+  server.close(() => process.exit(0));
 });
 
-export { app, server };
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down...');
+  await disconnectRedis();
+  server.close(() => process.exit(0));
+});
+
+start();

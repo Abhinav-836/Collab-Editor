@@ -1,3 +1,12 @@
+-- Ensure the function exists (idempotent)
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
 -- Create documents table
 CREATE TABLE IF NOT EXISTS documents (
     id SERIAL PRIMARY KEY,
@@ -9,12 +18,12 @@ CREATE TABLE IF NOT EXISTS documents (
     UNIQUE(room_id)
 );
 
--- Create index for document lookups
 CREATE INDEX IF NOT EXISTS idx_documents_room_id ON documents(room_id);
 CREATE INDEX IF NOT EXISTS idx_documents_last_modified ON documents(last_modified);
 
--- Create function to update last_modified
-CREATE TRIGGER update_documents_last_modified 
-    BEFORE UPDATE ON documents 
-    FOR EACH ROW 
+-- ✅ Drop first so re-running is safe
+DROP TRIGGER IF EXISTS update_documents_last_modified ON documents;
+CREATE TRIGGER update_documents_last_modified
+    BEFORE UPDATE ON documents
+    FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

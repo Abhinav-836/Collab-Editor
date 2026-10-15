@@ -8,7 +8,7 @@ const router = Router();
 
 router.post('/suggest', getAISuggestions);
 router.post('/explain', explainCode);
-router.post('/chat', chat);  // Add this line
+router.post('/chat', chat);
 router.get('/models', getModels);
 
 export { router as aiRoutes };

@@ -3,7 +3,6 @@ interface Metrics {
   totalOperations: number;
   activeRooms: number;
   startTime: number;
-  operationsPerSecond: number[];
 }
 
 interface MetricsResponse {
@@ -11,88 +10,109 @@ interface MetricsResponse {
   totalOperations: number;
   activeRooms: number;
   startTime: number;
-  operationsPerSecond: number[];
   uptime: number;
+  operationsPerSecond: number[];
   avgOperationsPerSecond: number;
 }
 
 class MetricsCollector {
-  private metrics: Metrics = {
-    totalConnections: 0,
-    totalOperations: 0,
-    activeRooms: 0,
-    startTime: Date.now(),
-    operationsPerSecond: []
-  };
-  
-  private lastOperationCount = 0;
-  private lastMetricsTime = Date.now();
-  
+  private totalConnections = 0;
+  private totalOperations = 0;
+  private activeRooms = 0;
+  private readonly startTime = Date.now();
+
+  // Rolling window of ops-per-second samples (last 60s)
+  private opsWindow: Array<{ second: number; count: number }> = [];
+  private currentSecondOps = 0;
+  private currentSecondStart = Math.floor(Date.now() / 1000);
+
   incrementConnections(): void {
-    this.metrics.totalConnections++;
+    this.totalConnections++;
   }
-  
+
   decrementConnections(): void {
-    this.metrics.totalConnections--;
+    this.totalConnections = Math.max(0, this.totalConnections - 1);
   }
-  
+
   incrementOperations(): void {
-    this.metrics.totalOperations++;
-    this.updateOperationsPerSecond();
+    this.totalOperations++;
+    this.currentSecondOps++;
   }
-  
+
+  // Call this whenever a room is created or deleted
   setActiveRooms(count: number): void {
-    this.metrics.activeRooms = count;
+    this.activeRooms = Math.max(0, count);
   }
-  
-  private updateOperationsPerSecond(): void {
-    const now = Date.now();
-    if (now - this.lastMetricsTime >= 1000) {
-      const opsInLastSecond = this.metrics.totalOperations - this.lastOperationCount;
-      this.metrics.operationsPerSecond.push(opsInLastSecond);
-      
-      if (this.metrics.operationsPerSecond.length > 60) {
-        this.metrics.operationsPerSecond.shift();
-      }
-      
-      this.lastOperationCount = this.metrics.totalOperations;
-      this.lastMetricsTime = now;
-    }
+
+  addRoom(): void {
+    this.activeRooms++;
   }
-  
+
+  removeRoom(): void {
+    this.activeRooms = Math.max(0, this.activeRooms - 1);
+  }
+
   getMetrics(): MetricsResponse {
-    const uptime = (Date.now() - this.metrics.startTime) / 1000;
-    const avgOpsPerSecond = this.metrics.operationsPerSecond.length > 0
-      ? this.metrics.operationsPerSecond.reduce((a, b) => a + b, 0) / this.metrics.operationsPerSecond.length
+    const uptime = (Date.now() - this.startTime) / 1000;
+    const samples = this.opsWindow.map((s) => s.count);
+    const avgOpsPerSecond = samples.length > 0
+      ? samples.reduce((a, b) => a + b, 0) / samples.length
       : 0;
-    
+
     return {
-      totalConnections: this.metrics.totalConnections,
-      totalOperations: this.metrics.totalOperations,
-      activeRooms: this.metrics.activeRooms,
-      startTime: this.metrics.startTime,
-      operationsPerSecond: this.metrics.operationsPerSecond,
-      uptime: uptime,
+      totalConnections: this.totalConnections,
+      totalOperations: this.totalOperations,
+      activeRooms: this.activeRooms,
+      startTime: this.startTime,
+      uptime,
+      operationsPerSecond: samples,
       avgOperationsPerSecond: Math.round(avgOpsPerSecond)
     };
   }
-  
+
   reset(): void {
-    this.metrics = {
-      totalConnections: 0,
-      totalOperations: 0,
-      activeRooms: 0,
-      startTime: Date.now(),
-      operationsPerSecond: []
-    };
-    this.lastOperationCount = 0;
-    this.lastMetricsTime = Date.now();
+    this.totalConnections = 0;
+    this.totalOperations = 0;
+    this.activeRooms = 0;
+    this.opsWindow = [];
+    this.currentSecondOps = 0;
+    this.currentSecondStart = Math.floor(Date.now() / 1000);
+  }
+
+  // Called once per second by the sampler below
+  private flushSecond(): void {
+    const nowSecond = Math.floor(Date.now() / 1000);
+
+    // Fill any skipped seconds with zeros (so avg is accurate)
+    while (this.currentSecondStart < nowSecond) {
+      this.opsWindow.push({
+        second: this.currentSecondStart,
+        count: this.currentSecondOps
+      });
+      this.currentSecondOps = 0;
+      this.currentSecondStart++;
+    }
+
+    // Keep only last 60 samples
+    if (this.opsWindow.length > 60) {
+      this.opsWindow = this.opsWindow.slice(-60);
+    }
+  }
+
+  // Expose for the interval
+  _tick(): void {
+    this.flushSecond();
   }
 }
 
 export const metrics = new MetricsCollector();
 
-// Log metrics every minute
+// Sample every second — records ops/sec even during idle periods
+setInterval(() => {
+  metrics._tick();
+}, 1000);
+
+// Log summary every minute
 setInterval(() => {
   const stats = metrics.getMetrics();
   console.log('📊 Metrics:', {
@@ -102,4 +122,4 @@ setInterval(() => {
     opsPerSecond: stats.avgOperationsPerSecond,
     uptime: Math.floor(stats.uptime)
   });
-}, 60000);
+}, 60_000);

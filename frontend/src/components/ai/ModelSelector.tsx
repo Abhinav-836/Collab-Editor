@@ -10,26 +10,22 @@ interface ModelSelectorProps {
   onModelChange: (model: string) => void;
 }
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
 export default function ModelSelector({ selectedModel, onModelChange }: ModelSelectorProps) {
   const [models, setModels] = useState<Model[]>([
-    { name: 'llama3.2:latest', id: 'llama3.2:latest' },
-    { name: 'codellama:latest', id: 'codellama:latest' },
-    { name: 'mistral:latest', id: 'mistral:latest' },
-    { name: 'llama3.1:latest', id: 'llama3.1:latest' }
-  ]);
+  { name: 'gemma4:31b-cloud', id: 'gemma4:31b-cloud' }]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetchModels();
   }, []);
 
-  const API_BASE = import.meta.env.VITE_API_URL || '';
-
   const fetchModels = async () => {
     try {
-        const response = await fetch(`${API_BASE}/api/ai/models`);
+      const response = await fetch(`${API_BASE}/api/ai/models`);
       const data = await response.json();
-      if (data.success && data.models && data.models.length > 0) {
+      if (data.success && data.models?.length > 0) {
         setModels(data.models);
         if (data.models[0] && !selectedModel) {
           onModelChange(data.models[0].name);
@@ -43,11 +39,7 @@ export default function ModelSelector({ selectedModel, onModelChange }: ModelSel
   };
 
   if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '12px', color: '#888' }}>🤖 Loading...</span>
-      </div>
-    );
+    return <span style={{ fontSize: '12px', color: '#888' }}>🤖 Loading...</span>;
   }
 
   return (
@@ -70,7 +62,7 @@ export default function ModelSelector({ selectedModel, onModelChange }: ModelSel
       >
         {models.map((model) => (
           <option key={model.id} value={model.name}>
-            {model.name.replace(':latest', '')}
+            {model.name}
           </option>
         ))}
       </select>

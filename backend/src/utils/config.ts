@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 
 dotenv.config();
 
@@ -28,31 +27,26 @@ export const config: Config = {
   ollamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   rateLimit: {
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     maxRequests: 100
   },
   websocket: {
-    pingInterval: 30000, // 30 seconds
-    pingTimeout: 10000 // 10 seconds
+    pingInterval: 30_000,
+    pingTimeout: 10_000
   }
 };
 
 export const validateConfig = (): boolean => {
   const required = ['DATABASE_URL', 'REDIS_URL'];
-  const missing = required.filter(key => !process.env[key]);
-  
+  const missing = required.filter((key) => !process.env[key]);
+
   if (missing.length > 0) {
     console.warn(`⚠️ Missing environment variables: ${missing.join(', ')}`);
     console.warn('Using default values for missing variables');
   }
-  
+
   return true;
 };
 
-export const isProduction = (): boolean => {
-  return config.nodeEnv === 'production';
-};
-
-export const isDevelopment = (): boolean => {
-  return config.nodeEnv === 'development';
-};
+export const isProduction = (): boolean => config.nodeEnv === 'production';
+export const isDevelopment = (): boolean => config.nodeEnv === 'development';

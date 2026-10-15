@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc --skipLibCheck",
     "start": "node dist/index.js",
-    "test": "vitest"
+    "test": "vitest",
+    "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
     "axios": "^1.15.2",
