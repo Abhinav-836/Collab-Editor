@@ -35,6 +35,21 @@ app.use(express.json({ limit: '5mb' }));
 app.use(logger);
 app.use(rateLimiter(config.rateLimit.maxRequests, config.rateLimit.windowMs));
 
+// Root — friendly info instead of Express' default "Cannot GET /"
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'Collab Editor API',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      healthDetailed: '/health/detailed',
+      rooms: '/api/rooms',
+      ai: '/api/ai/{chat,explain,suggest,models}',
+      websocket: '/ws?roomId=...&userId=...&userName=...'
+    }
+  });
+});
+
 // Health
 app.get('/health', healthCheck);
 app.get('/health/detailed', detailedHealthCheck);
