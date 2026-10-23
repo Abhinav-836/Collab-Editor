@@ -13,6 +13,8 @@ import { aiRoutes } from './api/ai/index.js';
 import { createRoom, getRooms } from './api/rooms/createRoom.js';
 import { getRoom, getRoomStats } from './api/rooms/getRoom.js';
 import { deleteRoom } from './api/rooms/deleteRoom.js';
+import { joinRoom } from './api/rooms/access.js';
+import { runCode } from './api/run.js';
 
 import { WebSocketHandler } from './websocket/index.js';
 import { connectRedis, disconnectRedis } from './db/redis/client.js';
@@ -47,6 +49,7 @@ app.get('/', (_req, res) => {
       health: '/health',
       healthDetailed: '/health/detailed',
       rooms: '/api/rooms',
+      run: '/api/run',
       ai: '/api/ai/{chat,explain,suggest,models}',
       websocket: '/ws?roomId=...&userId=...&userName=...'
     }
@@ -65,6 +68,18 @@ app.post('/api/rooms', createRoom);
 app.get('/api/rooms', getRooms);
 app.get('/api/rooms/:id', getRoom);
 app.get('/api/rooms/:id/stats', getRoomStats);
+// Max 10 password attempts per IP per room every 10 minutes (stops guessing)
+app.post(
+  '/api/rooms/:id/join',
+  rateLimiter(10, 10 * 60 * 1000, {
+    key: (req) => `${req.ip}|${req.params.id}`,
+    message: 'Too many password attempts. Wait a few minutes and try again.'
+  }),
+  joinRoom
+);
+
+// Code execution (proxied to Wandbox) — 10 runs per minute per IP
+app.post('/api/run', rateLimiter(10, 60 * 1000, { message: 'Too many runs. Wait a moment.' }), runCode);
 app.delete('/api/rooms/:id', deleteRoom);
 
 // Unknown API routes → JSON 404 (instead of Express' HTML page)

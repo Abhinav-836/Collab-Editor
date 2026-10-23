@@ -63,7 +63,7 @@ export const isDatabaseReady = (): boolean => lastPingOk;
 
 /**
  * Create the tables persistence needs if they don't exist yet.
- * Same definitions as migrations/001 and 002 (all statements are idempotent),
+ * Same definitions as migrations/001, 002 and 004 (all statements are idempotent),
  * so a fresh database works without running `npm run migrate` first.
  */
 export const ensureSchema = async (): Promise<void> => {
@@ -88,6 +88,7 @@ export const ensureSchema = async (): Promise<void> => {
       UNIQUE(room_id)
     );
     CREATE INDEX IF NOT EXISTS idx_documents_last_modified ON documents(last_modified);
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS password_hash TEXT;
   `);
   lastPingOk = true;
 };

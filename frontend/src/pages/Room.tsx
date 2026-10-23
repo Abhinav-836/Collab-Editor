@@ -5,7 +5,10 @@ import LanguageSelector from '../components/editor/LanguageSelector';
 import ActiveUsers from '../components/presence/ActiveUsers';
 import ModelSelector from '../components/ai/ModelSelector';
 import AIChatAssistant from '../components/ai/AIChatAssistant';
-import { CollabSocket, ConnectionStatus, getWsBase } from '../services/websocketService';
+import RunPanel, { RUN_PANEL_HEIGHT } from '../components/editor/RunPanel';
+import { CollabSocket, ConnectionStatus, getWsBase, CLOSE_PASSWORD_REQUIRED } from '../services/websocketService';
+import { getLanguage } from '../constants/languages';
+import { getRoomToken, setRoomToken } from '../utils/roomTokens';
 
 const DEFAULT_MODEL = 'gemma4:31b-cloud';
 
@@ -36,6 +39,8 @@ export default function Room() {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
   const [copied, setCopied] = useState(false);
+  const [showRun, setShowRun] = useState(false);
+  const [runRequest, setRunRequest] = useState(0);
 
   const userIdRef = useRef(newUserId());
   const editorRef = useRef<EditorHandle>(null);
@@ -52,10 +57,19 @@ export default function Room() {
     }
 
     const params = new URLSearchParams({ roomId, userId: userIdRef.current, userName });
+    const token = getRoomToken(roomId);
+    if (token) params.set('token', token);
     const s = new CollabSocket(`${getWsBase()}/ws?${params.toString()}`);
 
     const offs = [
-      s.onStatus(setStatus),
+      s.onStatus((next) => {
+        setStatus(next);
+        if (next === 'closed' && s.lastCloseCode === CLOSE_PASSWORD_REQUIRED) {
+          // Missing or expired token → ask for the password on the home page
+          setRoomToken(roomId, null);
+          navigate(`/?room=${encodeURIComponent(roomId)}&locked=1`, { replace: true });
+        }
+      }),
       s.on('users_list', (d) => Array.isArray(d.users) && setUsers(d.users)),
       s.on('user_joined', (d) => Array.isArray(d.users) && setUsers(d.users)),
       s.on('user_left', (d) => Array.isArray(d.users) && setUsers(d.users)),
@@ -100,6 +114,37 @@ export default function Room() {
   const getCode = useCallback(() => editorRef.current?.getValue() ?? '', []);
 
   const isConnected = status === 'open';
+  const lang = getLanguage(language);
+
+  const runCode = () => {
+    setShowRun(true);
+    setRunRequest((n) => n + 1);
+  };
+
+  const downloadCode = () => {
+    const code = getCode();
+    // Java needs the file named after its public class (Main.java), others use the room id
+    const javaClass = lang.id === 'java' ? code.match(/public\s+(?:final\s+)?class\s+(\w+)/)?.[1] : undefined;
+    const fileName = `${javaClass ?? roomId}.${lang.extension}`;
+    const url = URL.createObjectURL(new Blob([code], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  };
+
+  const headerButton = (bg: string, border: string, color: string) => ({
+    padding: '4px 10px',
+    background: bg,
+    border: `1px solid ${border}`,
+    borderRadius: '4px',
+    color,
+    cursor: 'pointer',
+    fontSize: '11px'
+  });
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#1e1e1e' }}>
@@ -167,6 +212,21 @@ export default function Room() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+          <button
+            onClick={runCode}
+            disabled={!lang.runnable}
+            title={lang.runnable ? 'Run the code (output is only shown to you)' : `${lang.name} can't be run`}
+            style={{
+              ...headerButton('#2e7d32', '#2e7d32', 'white'),
+              opacity: lang.runnable ? 1 : 0.45,
+              cursor: lang.runnable ? 'pointer' : 'not-allowed'
+            }}
+          >
+            ▶ Run
+          </button>
+          <button onClick={downloadCode} title={`Download as .${lang.extension}`} style={headerButton('#3c3c3c', '#555', '#d4d4d4')}>
+            ⬇ Download
+          </button>
           <LanguageSelector language={language} onLanguageChange={handleLanguageChange} />
           <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
           <ActiveUsers users={users} />
@@ -193,11 +253,16 @@ export default function Room() {
         )}
       </div>
 
+      {showRun && (
+        <RunPanel getCode={getCode} language={language} runRequest={runRequest} onClose={() => setShowRun(false)} />
+      )}
+
       <AIChatAssistant
         selectedModel={selectedModel}
         getCode={getCode}
         language={language}
         onInsertCode={handleInsertCode}
+        bottomOffset={showRun ? RUN_PANEL_HEIGHT : 0}
       />
 
       {showLeaveConfirm && (

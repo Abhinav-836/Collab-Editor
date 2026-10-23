@@ -14,6 +14,8 @@ interface AIChatAssistantProps {
   language: string;
   /** Returns false if the editor isn't ready to accept the insert. */
   onInsertCode?: (code: string) => boolean;
+  /** Lift the floating button/panel (e.g. above the Run output panel). */
+  bottomOffset?: number;
 }
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '');
@@ -23,7 +25,8 @@ export default function AIChatAssistant({
   selectedModel,
   getCode,
   language,
-  onInsertCode
+  onInsertCode,
+  bottomOffset = 0
 }: AIChatAssistantProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -167,7 +170,7 @@ export default function AIChatAssistant({
         onClick={() => setIsOpen(!isOpen)}
         style={{
           position: 'fixed',
-          bottom: '20px',
+          bottom: `${20 + bottomOffset}px`,
           right: '20px',
           width: '56px',
           height: '56px',
@@ -188,12 +191,12 @@ export default function AIChatAssistant({
         <div
           style={{
             position: 'fixed',
-            bottom: '90px',
+            bottom: `${90 + bottomOffset}px`,
             right: '20px',
             width: '450px',
             maxWidth: 'calc(100vw - 40px)',
             height: '550px',
-            maxHeight: 'calc(100vh - 110px)',
+            maxHeight: `calc(100vh - ${110 + bottomOffset}px)`,
             background: '#252526',
             borderRadius: '12px',
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',

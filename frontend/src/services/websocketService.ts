@@ -19,8 +19,11 @@ export function getWsBase(): string {
   return base.replace(/\/+$/, '').replace(/\/ws$/, '');
 }
 
+/** Server closed the socket because the room needs a (valid) password. */
+export const CLOSE_PASSWORD_REQUIRED = 4401;
+
 /** Close codes after which reconnecting is pointless. */
-const FATAL_CLOSE_CODES = new Set([1008]);
+const FATAL_CLOSE_CODES = new Set([1008, CLOSE_PASSWORD_REQUIRED]);
 
 /**
  * A WebSocket that reconnects with exponential backoff, keeps its listeners
@@ -34,6 +37,8 @@ export class CollabSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUser = false;
   status: ConnectionStatus = 'connecting';
+  /** Close code of the last connection (e.g. CLOSE_PASSWORD_REQUIRED). */
+  lastCloseCode: number | null = null;
 
   constructor(private url: string) {
     window.addEventListener('online', this.reconnectNow);
@@ -68,6 +73,7 @@ export class CollabSocket {
     ws.onclose = (event) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      this.lastCloseCode = event.code;
       if (this.closedByUser || FATAL_CLOSE_CODES.has(event.code)) {
         if (event.reason) console.error('WebSocket closed:', event.reason);
         this.setStatus('closed');

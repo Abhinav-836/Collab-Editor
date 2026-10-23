@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { setRoomToken } from '../utils/roomTokens';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '');
 const ROOM_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -24,8 +25,14 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const [roomId, setRoomId] = useState(searchParams.get('room') || '');
   const [userName, setUserName] = useState(loadName);
+  const [newRoomPassword, setNewRoomPassword] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(searchParams.get('locked') === '1');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState(
+    searchParams.get('locked') === '1' ? 'This room is password-protected. Enter the password to join.' : ''
+  );
   const navigate = useNavigate();
 
   const goToRoom = (id: string) => {
@@ -44,6 +51,10 @@ export default function Home() {
       setError('Please enter your name');
       return;
     }
+    if (newRoomPassword && newRoomPassword.length < 4) {
+      setError('Room password must be at least 4 characters (or leave it empty)');
+      return;
+    }
 
     setIsLoading(true);
     setError('');
@@ -52,13 +63,19 @@ export default function Home() {
       const response = await fetch(`${API_BASE}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify(newRoomPassword ? { password: newRoomPassword } : {})
       });
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 400 && data.error) {
+          setError(data.error);
+          return;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
       if (!data.roomId) throw new Error('No room id in response');
+      if (data.token) setRoomToken(data.roomId, data.token);
       goToRoom(data.roomId);
     } catch (error) {
       console.error('Failed to create room:', error);
@@ -68,12 +85,39 @@ export default function Home() {
     }
   };
 
-  const joinRoom = () => {
+  const joinRoom = async () => {
+    if (isJoining) return;
     if (!userName.trim()) return setError('Please enter your name');
     const id = parseRoomInput(roomId);
     if (!id) return setError('Please enter a room ID');
     if (!ROOM_ID_RE.test(id)) return setError('Room ID can only contain letters, numbers, - and _');
-    goToRoom(id);
+
+    setIsJoining(true);
+    setError('');
+    try {
+      // The server says whether the room is protected and, with the right password, returns a token
+      const response = await fetch(`${API_BASE}/api/rooms/${encodeURIComponent(id)}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(joinPassword ? { password: joinPassword } : {})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        setNeedsPassword(true);
+        setError(joinPassword ? 'Wrong password' : 'This room is password-protected. Enter the password to join.');
+        return;
+      }
+      if (!response.ok) {
+        setError(data.error || `Could not join (HTTP ${response.status})`);
+        return;
+      }
+      setRoomToken(id, data.token ?? null);
+      goToRoom(id);
+    } catch {
+      setError("Can't reach the server. Check your connection and try again.");
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   return (
@@ -153,6 +197,27 @@ export default function Home() {
           }}
         />
 
+        <input
+          type="password"
+          placeholder="🔒 Password for new room (optional)"
+          value={newRoomPassword}
+          onChange={(e) => setNewRoomPassword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && createRoom()}
+          maxLength={100}
+          autoComplete="new-password"
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            marginBottom: '10px',
+            background: '#1e1e2e',
+            border: '1px solid #3a3a4a',
+            borderRadius: '10px',
+            fontSize: '13px',
+            color: '#d4d4d4',
+            outline: 'none'
+          }}
+        />
+
         <button
           onClick={createRoom}
           disabled={isLoading}
@@ -193,8 +258,32 @@ export default function Home() {
           }}
         />
 
+        {needsPassword && (
+          <input
+            type="password"
+            placeholder="🔑 Room password"
+            value={joinPassword}
+            onChange={(e) => setJoinPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && joinRoom()}
+            autoFocus
+            autoComplete="current-password"
+            style={{
+              width: '100%',
+              padding: '14px',
+              marginBottom: '15px',
+              background: '#1e1e2e',
+              border: '1px solid #f4b400',
+              borderRadius: '10px',
+              fontSize: '14px',
+              color: '#d4d4d4',
+              outline: 'none'
+            }}
+          />
+        )}
+
         <button
           onClick={joinRoom}
+          disabled={isJoining}
           style={{
             width: '100%',
             padding: '14px',
@@ -207,7 +296,7 @@ export default function Home() {
             cursor: 'pointer'
           }}
         >
-          🔗 Join Room
+          {isJoining ? 'Joining…' : needsPassword ? '🔓 Unlock & Join' : '🔗 Join Room'}
         </button>
       </div>
     </div>
