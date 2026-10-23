@@ -2,10 +2,8 @@
 # Dependencies
 # ====================
 node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-bun.lockb
+# Lockfiles ARE committed: they make Render/Vercel install the exact,
+# audited versions instead of whatever is in their build cache.
 
 # ====================
 # Build outputs

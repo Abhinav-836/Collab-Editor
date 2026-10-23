@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface RoomUser {
   id: string;
@@ -24,7 +24,7 @@ class RoomStore {
   private rooms: Map<string, Room> = new Map();
 
   createRoom(settings?: Partial<Room['settings']>): Room {
-    const roomId = uuidv4().slice(0, 8);
+    const roomId = randomUUID().slice(0, 8); // built into Node — no uuid package needed
     const room: Room = {
       id: roomId,
       createdAt: new Date().toISOString(),
