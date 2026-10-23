@@ -9,16 +9,19 @@ interface Message {
 
 interface AIChatAssistantProps {
   selectedModel: string;
-  currentCode: string;
+  /** Read the live editor text at send time (avoids re-rendering on every keystroke). */
+  getCode: () => string;
   language: string;
-  onInsertCode?: (code: string) => void;
+  /** Returns false if the editor isn't ready to accept the insert. */
+  onInsertCode?: (code: string) => boolean;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '');
+const CODE_BLOCK_RE = /```[^\n`]*\r?\n([\s\S]*?)```/;
 
 export default function AIChatAssistant({
   selectedModel,
-  currentCode,
+  getCode,
   language,
   onInsertCode
 }: AIChatAssistantProps) {
@@ -35,6 +38,7 @@ export default function AIChatAssistant({
   const [isLoading, setIsLoading] = useState(false);
   const [availableModels, setAvailableModels] = useState<{ name: string; id: string }[]>([{ name: 'gemma4:31b-cloud', id: 'gemma4:31b-cloud' }]);
   const [chatModel, setChatModel] = useState(selectedModel);
+  const [notice, setNotice] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -67,12 +71,13 @@ export default function AIChatAssistant({
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    const text = input.trim();
+    if (!text || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: text,
       timestamp: new Date()
     };
 
@@ -85,8 +90,8 @@ export default function AIChatAssistant({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: input,
-          code: currentCode,
+          message: text,
+          code: getCode(),
           language,
           model: chatModel,
           history: messages.slice(-5).map((m) => ({
@@ -96,7 +101,10 @@ export default function AIChatAssistant({
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok && !data.response) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -129,18 +137,28 @@ export default function AIChatAssistant({
     }
   };
 
-  const insertCode = (code: string) => {
-    if (onInsertCode) onInsertCode(code);
-    else {
-      navigator.clipboard.writeText(code);
-      alert('Code copied to clipboard!');
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 2000);
+  };
+
+  const insertCode = async (code: string) => {
+    if (onInsertCode && onInsertCode(code)) {
+      flash('✓ Inserted at cursor');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      flash('Editor not ready — copied to clipboard');
+    } catch {
+      flash('Could not insert or copy the code');
     }
   };
 
+  // Matches ```js, ```c++, ```c#, ``` (no language) and Windows line endings
   const extractCodeFromMessage = (content: string): string | null => {
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    const matches = [...content.matchAll(codeBlockRegex)];
-    return matches.length > 0 ? matches[0][2] : null;
+    const match = content.match(CODE_BLOCK_RE);
+    return match ? match[1] : null;
   };
 
   return (
@@ -173,7 +191,9 @@ export default function AIChatAssistant({
             bottom: '90px',
             right: '20px',
             width: '450px',
+            maxWidth: 'calc(100vw - 40px)',
             height: '550px',
+            maxHeight: 'calc(100vh - 110px)',
             background: '#252526',
             borderRadius: '12px',
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
@@ -231,6 +251,11 @@ export default function AIChatAssistant({
             </div>
           </div>
 
+          {notice && (
+            <div style={{ padding: '6px 16px', background: '#2e7d32', color: 'white', fontSize: '11px' }}>
+              {notice}
+            </div>
+          )}
           <div
             style={{
               padding: '6px 16px',
@@ -278,17 +303,12 @@ export default function AIChatAssistant({
                     wordBreak: 'break-word'
                   }}
                 >
-                  {msg.content.split('\n').map((line, i) => (
-                    <span key={i}>
-                      {line}
-                      <br />
-                    </span>
-                  ))}
-                  {extractCodeFromMessage(msg.content) && (
+                  <div>{msg.content}</div>
+                  {msg.role === 'assistant' && extractCodeFromMessage(msg.content) !== null && (
                     <button
                       onClick={() => {
                         const code = extractCodeFromMessage(msg.content);
-                        if (code) insertCode(code);
+                        if (code !== null) insertCode(code);
                       }}
                       style={{
                         marginTop: '8px',

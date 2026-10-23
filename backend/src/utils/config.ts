@@ -8,32 +8,50 @@ export interface Config {
   databaseUrl: string;
   redisUrl: string;
   ollamaUrl: string;
-  corsOrigin: string;
+  /** Allowed browser origins. Contains '*' to allow any origin. */
+  corsOrigins: string[];
   rateLimit: {
     windowMs: number;
     maxRequests: number;
   };
   websocket: {
     pingInterval: number;
-    pingTimeout: number;
+    maxPayloadBytes: number;
   };
 }
+
+/**
+ * CORS_ORIGIN may hold several comma-separated origins, e.g.
+ *   CORS_ORIGIN=https://my-app.vercel.app,http://localhost:5173
+ * Trailing slashes are stripped because browsers never send them.
+ */
+const parseOrigins = (raw: string | undefined): string[] =>
+  (raw || 'http://localhost:5173')
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 
 export const config: Config = {
   port: parseInt(process.env.PORT || '8080', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   databaseUrl: process.env.DATABASE_URL || 'postgresql://user:password@localhost:5432/collab',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-  ollamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  ollamaUrl: process.env.OLLAMA_CLOUD_URL || 'https://ollama.com/api',
+  corsOrigins: parseOrigins(process.env.CORS_ORIGIN),
   rateLimit: {
     windowMs: 60 * 1000,
-    maxRequests: 100
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX || '100', 10)
   },
   websocket: {
     pingInterval: 30_000,
-    pingTimeout: 10_000
+    maxPayloadBytes: 2 * 1024 * 1024
   }
+};
+
+export const isOriginAllowed = (origin: string | undefined): boolean => {
+  if (!origin) return true; // curl, server-to-server, same-origin navigation
+  if (config.corsOrigins.includes('*')) return true;
+  return config.corsOrigins.includes(origin.replace(/\/+$/, ''));
 };
 
 export const validateConfig = (): boolean => {

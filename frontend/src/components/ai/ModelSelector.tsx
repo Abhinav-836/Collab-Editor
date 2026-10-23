@@ -10,7 +10,7 @@ interface ModelSelectorProps {
   onModelChange: (model: string) => void;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '');
 
 export default function ModelSelector({ selectedModel, onModelChange }: ModelSelectorProps) {
   const [models, setModels] = useState<Model[]>([
@@ -27,7 +27,8 @@ export default function ModelSelector({ selectedModel, onModelChange }: ModelSel
       const data = await response.json();
       if (data.success && data.models?.length > 0) {
         setModels(data.models);
-        if (data.models[0] && !selectedModel) {
+        // Keep the <select> and state in agreement if the current model isn't offered
+        if (!data.models.some((m: Model) => m.name === selectedModel)) {
           onModelChange(data.models[0].name);
         }
       }

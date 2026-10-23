@@ -1,10 +1,10 @@
+import { getUserColor } from '../../utils/userColor';
+
 interface ActiveUsersProps {
   users: Array<{ userId: string; userName: string }>;
 }
 
 export default function ActiveUsers({ users }: ActiveUsersProps) {
-  const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7D794'];
-  
   if (users.length === 0) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -19,14 +19,14 @@ export default function ActiveUsers({ users }: ActiveUsersProps) {
         👥 {users.length} online
       </span>
       <div style={{ display: 'flex', gap: '4px' }}>
-        {users.map((user, idx) => (
+        {users.map((user) => (
           <div
             key={user.userId}
             style={{
               width: '28px',
               height: '28px',
               borderRadius: '50%',
-              background: colors[idx % colors.length],
+              background: getUserColor(user.userId), // same color as their cursor in the editor
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -38,7 +38,7 @@ export default function ActiveUsers({ users }: ActiveUsersProps) {
             }}
             title={user.userName}
           >
-            {user.userName.charAt(0).toUpperCase()}
+            {(user.userName || '?').charAt(0).toUpperCase()}
           </div>
         ))}
       </div>

@@ -1,48 +1,63 @@
-import Redis from 'redis';
+import { createClient } from 'redis';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-
-export const redisClient = Redis.createClient({ url: redisUrl });
+const MAX_RETRIES = 3;
 
 let isConnected = false;
+let gaveUp = false;
+let lastErrorMessage = '';
 
-redisClient.on('error', (err) => {
-  console.error('Redis Client Error:', err.message);
-  isConnected = false;
+export const redisClient = createClient({
+  url: redisUrl,
+  socket: {
+    connectTimeout: 5_000,
+    // Default strategy retries forever, which made connect() never resolve
+    // and the HTTP server never start when Redis is absent.
+    reconnectStrategy: (retries: number) => {
+      if (retries >= MAX_RETRIES) {
+        gaveUp = true;
+        return new Error('Redis unreachable — giving up');
+      }
+      return Math.min(500 * 2 ** retries, 3_000);
+    }
+  }
 });
 
-redisClient.on('connect', () => {
-  console.log('✅ Redis connected successfully');
-  isConnected = true;
+redisClient.on('error', (err: Error) => {
+  isConnected = false;
+  // Avoid flooding logs with the same error on every retry
+  if (err.message !== lastErrorMessage) {
+    console.error('Redis Client Error:', err.message);
+    lastErrorMessage = err.message;
+  }
 });
 
 redisClient.on('ready', () => {
   console.log('✅ Redis ready to accept commands');
   isConnected = true;
+  lastErrorMessage = '';
 });
 
 redisClient.on('end', () => {
-  console.log('⚠️ Redis connection ended');
   isConnected = false;
 });
 
 export const connectRedis = async (): Promise<void> => {
-  if (isConnected) return;
+  if (isConnected || gaveUp || redisClient.isOpen) return;
   try {
     await redisClient.connect();
   } catch (error) {
-    console.error('Failed to connect to Redis:', (error as Error).message);
-    console.warn('⚠️ Continuing without Redis — some features may be degraded');
+    console.warn(`⚠️ Continuing without Redis (${(error as Error).message})`);
   }
 };
 
 export const disconnectRedis = async (): Promise<void> => {
   try {
-    if (isConnected) {
-      await redisClient.disconnect();
+    if (redisClient.isOpen) {
+      await redisClient.quit();
       console.log('Redis disconnected');
     }
   } catch (error) {

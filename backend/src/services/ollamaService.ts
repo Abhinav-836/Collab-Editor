@@ -175,12 +175,9 @@ ${code}
 
 Provide a concise explanation of what it does and its key features.`;
 
-    try {
-      return await callChat([{ role: 'user', content: prompt }], resolved, 0.5);
-    } catch (error) {
-      console.error('AI explanation error:', (error as Error).message);
-      return this.getFallbackExplanation(code, language);
-    }
+    // Let errors propagate: api/ai/explain.ts catches them, builds a local
+    // fallback and correctly reports aiGenerated: false.
+    return callChat([{ role: 'user', content: prompt }], resolved, 0.5);
   },
 
   getFallbackSuggestions(language: string): string[] {

@@ -1,112 +1,105 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import MonacoEditor from '../components/editor/MonacoEditor';
+import MonacoEditor, { EditorHandle } from '../components/editor/MonacoEditor';
 import LanguageSelector from '../components/editor/LanguageSelector';
 import ActiveUsers from '../components/presence/ActiveUsers';
 import ModelSelector from '../components/ai/ModelSelector';
 import AIChatAssistant from '../components/ai/AIChatAssistant';
+import { CollabSocket, ConnectionStatus, getWsBase } from '../services/websocketService';
 
-const RAW_WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
-const WS_BASE = RAW_WS_BASE.replace(/\/ws\/?$/, '').replace(/\/$/, '');
+const DEFAULT_MODEL = 'gemma4:31b-cloud';
+
+/**
+ * One id per page load. Reused across automatic reconnects (so the server
+ * replaces the stale socket instead of showing a ghost user), but never shared
+ * between tabs — two tabs with the same id would keep kicking each other off.
+ */
+const newUserId = () => `${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+
+const STATUS_LABEL: Record<ConnectionStatus, string> = {
+  connecting: 'Connecting…',
+  open: 'Connected',
+  reconnecting: 'Reconnecting…',
+  closed: 'Disconnected'
+};
 
 export default function Room() {
   const { roomId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const userName = searchParams.get('userName') || '';
-  const [ws, setWs] = useState<WebSocket | null>(null);
+  const userName = (searchParams.get('userName') || '').trim();
+
+  const [socket, setSocket] = useState<CollabSocket | null>(null);
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [users, setUsers] = useState<Array<{ userId: string; userName: string }>>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [documentContent, setDocumentContent] = useState('');
   const [language, setLanguage] = useState('javascript');
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gemma4:31b-cloud');
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+  const [copied, setCopied] = useState(false);
 
-  const userIdRef = useRef(`${Math.random().toString(36).substring(7)}_${Date.now()}`);
+  const userIdRef = useRef(newUserId());
+  const editorRef = useRef<EditorHandle>(null);
 
   useEffect(() => {
-    if (!roomId || !userName) {
-      navigate('/');
+    if (!roomId) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (!userName) {
+      // Opened a shared link without a name → ask for one, keep the room id
+      navigate(`/?room=${encodeURIComponent(roomId)}`, { replace: true });
       return;
     }
 
-    const wsUrl = `${WS_BASE}/ws?roomId=${roomId}&userId=${userIdRef.current}&userName=${encodeURIComponent(userName)}`;
-    console.log('🔌 Connecting to WebSocket:', wsUrl);
+    const params = new URLSearchParams({ roomId, userId: userIdRef.current, userName });
+    const s = new CollabSocket(`${getWsBase()}/ws?${params.toString()}`);
 
-    const websocket = new WebSocket(wsUrl);
+    const offs = [
+      s.onStatus(setStatus),
+      s.on('users_list', (d) => Array.isArray(d.users) && setUsers(d.users)),
+      s.on('user_joined', (d) => Array.isArray(d.users) && setUsers(d.users)),
+      s.on('user_left', (d) => Array.isArray(d.users) && setUsers(d.users)),
+      s.on('document_sync', (d) => typeof d.language === 'string' && setLanguage(d.language)),
+      s.on('language_changed', (d) => typeof d.language === 'string' && setLanguage(d.language))
+    ];
 
-    websocket.onopen = () => {
-      console.log('✅ Connected to WebSocket');
-      setIsConnected(true);
-      websocket.send(JSON.stringify({ type: 'get_document' }));
-    };
-
-    websocket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      switch (data.type) {
-        case 'user_joined':
-        case 'user_left':
-        case 'users_list':
-          if (data.users) setUsers(data.users);
-          break;
-        case 'document_sync':
-          if (typeof data.content === 'string') setDocumentContent(data.content);
-          if (typeof data.language === 'string') setLanguage(data.language);
-          break;
-        case 'language_changed':
-          if (typeof data.language === 'string') setLanguage(data.language);
-          break;
-      }
-    };
-
-    websocket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setIsConnected(false);
-    };
-
-    websocket.onclose = () => {
-      console.log('❌ WebSocket disconnected');
-      setIsConnected(false);
-    };
-
-    setWs(websocket);
+    setStatus(s.status);
+    setSocket(s);
 
     return () => {
-      if (websocket.readyState === WebSocket.OPEN) websocket.close();
+      offs.forEach((off) => off());
+      s.close();
+      setSocket(null);
+      setUsers([]);
     };
   }, [roomId, userName, navigate]);
 
-  const copyRoomId = () => navigator.clipboard.writeText(roomId || '');
+  const copyInviteLink = async () => {
+    const link = `${window.location.origin}/room/${roomId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt('Copy this invite link:', link);
+    }
+  };
 
   const leaveRoom = () => {
-    if (ws) ws.close();
+    socket?.close();
     navigate('/');
   };
 
-  // Change language locally + broadcast to others
   const handleLanguageChange = (newLanguage: string) => {
     setLanguage(newLanguage);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'change_language', language: newLanguage }));
-    }
+    socket?.send('change_language', { language: newLanguage });
   };
 
-  const handleInsertCode = (code: string) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      const position = documentContent.length;
-      ws.send(JSON.stringify({
-        type: 'operation',
-        operation: {
-          type: 'insert',
-          position,
-          chars: code,
-          clientId: userIdRef.current,
-          timestamp: Date.now(),
-          version: 0
-        }
-      }));
-    }
-  };
+  // Goes through the editor so it becomes a normal (synced) edit for everyone, including us
+  const handleInsertCode = useCallback((code: string) => editorRef.current?.insertText(code) ?? false, []);
+  const getCode = useCallback(() => editorRef.current?.getValue() ?? '', []);
+
+  const isConnected = status === 'open';
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#1e1e1e' }}>
@@ -117,10 +110,12 @@ export default function Room() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid #3e3e42'
+          borderBottom: '1px solid #3e3e42',
+          flexWrap: 'wrap',
+          gap: '10px'
         }}
       >
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: '#888', fontSize: '12px' }}>Room:</span>
             <code
@@ -135,27 +130,25 @@ export default function Room() {
               {roomId}
             </code>
             <button
-              onClick={copyRoomId}
+              onClick={copyInviteLink}
               style={{
                 padding: '4px 8px',
-                background: '#0e639c',
+                background: copied ? '#2e7d32' : '#0e639c',
                 border: 'none',
                 borderRadius: '4px',
                 color: 'white',
                 cursor: 'pointer',
                 fontSize: '11px'
               }}
-              title="Copy Room ID"
+              title="Copy invite link"
             >
-              📋
+              {copied ? '✓ Copied' : '📋 Invite'}
             </button>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: '#888', fontSize: '12px' }}>You:</span>
-            <span style={{ color: '#FF6B6B', fontSize: '12px', fontWeight: 'bold' }}>
-              {userName}
-            </span>
+            <span style={{ color: '#FF6B6B', fontSize: '12px', fontWeight: 'bold' }}>{userName}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -165,17 +158,15 @@ export default function Room() {
                 width: '8px',
                 height: '8px',
                 borderRadius: '50%',
-                background: isConnected ? '#4ECDC4' : '#FF6B6B',
+                background: isConnected ? '#4ECDC4' : status === 'closed' ? '#FF6B6B' : '#FFEAA7',
                 animation: isConnected ? 'pulse 2s infinite' : 'none'
               }}
             />
-            <span style={{ color: '#888', fontSize: '11px' }}>
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
+            <span style={{ color: '#888', fontSize: '11px' }}>{STATUS_LABEL[status]}</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
           <LanguageSelector language={language} onLanguageChange={handleLanguageChange} />
           <ModelSelector selectedModel={selectedModel} onModelChange={setSelectedModel} />
           <ActiveUsers users={users} />
@@ -196,21 +187,15 @@ export default function Room() {
         </div>
       </div>
 
-      <div style={{ flex: 1 }}>
-        {ws && (
-          <MonacoEditor
-            ws={ws}
-            userId={userIdRef.current}
-            initialContent={documentContent}
-            language={language}
-            onContentChange={setDocumentContent}
-          />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {socket && (
+          <MonacoEditor ref={editorRef} socket={socket} userId={userIdRef.current} language={language} users={users} />
         )}
       </div>
 
       <AIChatAssistant
         selectedModel={selectedModel}
-        currentCode={documentContent}
+        getCode={getCode}
         language={language}
         onInsertCode={handleInsertCode}
       />
@@ -234,6 +219,7 @@ export default function Room() {
               borderRadius: '12px',
               padding: '24px',
               width: '320px',
+              maxWidth: 'calc(100vw - 32px)',
               textAlign: 'center'
             }}
             onClick={(e) => e.stopPropagation()}
@@ -275,14 +261,6 @@ export default function Room() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes pulse {
-          0% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.8); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
     </div>
   );
 }
