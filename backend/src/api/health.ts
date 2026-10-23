@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { metrics } from '../utils/metrics.js';
 import { isRedisReady } from '../db/redis/client.js';
+import { isDatabaseConfigured, pingDatabase } from '../db/postgres/client.js';
 
 const startTime = Date.now();
 const VERSION = '1.0.0';
@@ -21,14 +22,16 @@ export const healthCheck = (_req: Request, res: Response) => {
   });
 };
 
-export const detailedHealthCheck = (_req: Request, res: Response) => {
+export const detailedHealthCheck = async (_req: Request, res: Response) => {
   const stats = metrics.getMetrics();
+  const database = isDatabaseConfigured() ? ((await pingDatabase()) ? 'up' : 'down') : 'not configured';
   return res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: Math.floor((Date.now() - startTime) / 1000),
     version: VERSION,
     services: {
+      database,
       redis: isRedisReady() ? 'up' : 'down'
     },
     metrics: {

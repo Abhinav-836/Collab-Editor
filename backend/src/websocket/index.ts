@@ -3,6 +3,7 @@ import { IncomingMessage } from 'http';
 import { ConnectionManager } from './connectionManager.js';
 import { MessageHandler } from './messageHandler.js';
 import { config } from '../utils/config.js';
+import { DocumentPersistence } from '../services/documentPersistence.js';
 
 const ROOM_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const USER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -16,10 +17,10 @@ export class WebSocketHandler {
   private messageHandler: MessageHandler;
   private heartbeat: ReturnType<typeof setInterval>;
 
-  constructor(wss: WebSocketServer) {
+  constructor(wss: WebSocketServer, persistence?: DocumentPersistence) {
     this.wss = wss;
     this.connectionManager = new ConnectionManager();
-    this.messageHandler = new MessageHandler(this.connectionManager);
+    this.messageHandler = new MessageHandler(this.connectionManager, persistence);
     this.wss.on('connection', (ws, req) => this.handleConnection(ws as AliveSocket, req));
 
     // Heartbeat: hosting proxies (Render, Railway, Nginx…) silently drop idle
@@ -41,6 +42,11 @@ export class WebSocketHandler {
 
   getActiveRoomCount(): number {
     return this.connectionManager.getAllRooms().length;
+  }
+
+  /** Save every room with unsaved edits (graceful shutdown). */
+  flushAll(): Promise<void> {
+    return this.messageHandler.flushAll();
   }
 
   private handleConnection(ws: AliveSocket, req: IncomingMessage): void {
@@ -80,11 +86,9 @@ export class WebSocketHandler {
         return;
       }
       if (!message || typeof message !== 'object') return;
-      try {
-        this.messageHandler.handleMessage(room, userId, message as Record<string, unknown>, ws);
-      } catch (error) {
-        console.error('Error handling message:', error);
-      }
+      this.messageHandler
+        .handleMessage(room, userId, message as Record<string, unknown>, ws)
+        .catch((error) => console.error('Error handling message:', error));
     });
 
     ws.on('close', () => {

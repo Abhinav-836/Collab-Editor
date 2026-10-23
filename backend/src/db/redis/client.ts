@@ -56,9 +56,14 @@ export const connectRedis = async (): Promise<void> => {
 
 export const disconnectRedis = async (): Promise<void> => {
   try {
-    if (redisClient.isOpen) {
-      await redisClient.quit();
+    if (redisClient.isReady) {
+      // Graceful QUIT only works on a live connection…
+      await Promise.race([redisClient.quit(), new Promise((r) => setTimeout(r, 2_000))]);
       console.log('Redis disconnected');
+    } else if (redisClient.isOpen) {
+      // …while still (re)connecting, quit() would wait forever — force-close instead.
+      gaveUp = true;
+      await redisClient.disconnect();
     }
   } catch (error) {
     console.error('Error disconnecting Redis:', (error as Error).message);
