@@ -64,7 +64,8 @@ export const isDatabaseReady = (): boolean => lastPingOk;
 /**
  * Create the tables persistence needs if they don't exist yet.
  * Same definitions as migrations/001, 002 and 004 (all statements are idempotent),
- * so a fresh database works without running `npm run migrate` first.
+ * so a fresh database works without running `npm run migrate` first — and it
+ * repairs databases created by the old, broken migration 002.
  */
 export const ensureSchema = async (): Promise<void> => {
   await query(`
@@ -89,6 +90,23 @@ export const ensureSchema = async (): Promise<void> => {
     );
     CREATE INDEX IF NOT EXISTS idx_documents_last_modified ON documents(last_modified);
     ALTER TABLE rooms ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    -- Repair: migration 002 attached a trigger to "documents" that sets NEW.updated_at,
+    -- a column documents doesn't have, so every UPDATE (i.e. every save after the
+    -- first) failed with: record "new" has no field "updated_at".
+    CREATE OR REPLACE FUNCTION update_last_modified_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      NEW.last_modified = CURRENT_TIMESTAMP;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    DROP TRIGGER IF EXISTS update_documents_last_modified ON documents;
+    CREATE TRIGGER update_documents_last_modified
+      BEFORE UPDATE ON documents
+      FOR EACH ROW
+      EXECUTE FUNCTION update_last_modified_column();
   `);
   lastPingOk = true;
 };
