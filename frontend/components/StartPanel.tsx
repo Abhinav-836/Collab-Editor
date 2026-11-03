@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, createRoom, joinRoom, NETWORK_ERROR } from '@/lib/api';
 import { setRoomToken } from '@/lib/roomTokens';
-import { loadName, parseRoomInput, ROOM_ID_RE, saveName } from '@/lib/userName';
+import { parseRoomInput, ROOM_ID_RE } from '@/lib/userName';
 import { track } from '@/lib/track';
 
 type Mode = 'create' | 'join';
@@ -25,11 +25,8 @@ export default function StartPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(locked ? 'This room is locked. Enter its password to join.' : '');
 
-  useEffect(() => setName(loadName()), []);
-
   const goToRoom = (id: string) => {
     const clean = name.trim().slice(0, 40);
-    saveName(clean);
     router.push(`/room/${encodeURIComponent(id)}?userName=${encodeURIComponent(clean)}`);
   };
 
@@ -89,8 +86,8 @@ export default function StartPanel() {
         className="field"
         value={name}
         maxLength={40}
-        autoComplete="nickname"
-        placeholder="Shown next to your cursor"
+        autoComplete="off"
+        placeholder="Enter your name"
         onChange={(e) => setName(e.target.value)}
       />
 

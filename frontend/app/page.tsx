@@ -74,7 +74,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-faint sm:px-6">
           Built by{' '}
           <a href="https://github.com/Abhinav-836" className="text-muted hover:text-text">
-            Abhinav
+            Abhinav Ashutosh
           </a>
           .
         </div>
