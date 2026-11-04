@@ -36,7 +36,7 @@ export default function HomePage() {
       </header>
 
       <main className="flex-1">
-        <section className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-8 sm:px-6 md:pt-14 lg:grid-cols-[minmax(0,26rem)_1fr] lg:items-start lg:gap-14">
+        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 pb-16 pt-8 sm:px-6 md:pt-14 lg:grid-cols-[minmax(0,26rem)_1fr] lg:items-start lg:gap-14">
           <div>
             <h1 className="text-4xl font-semibold sm:text-5xl">Write code together, in the same file, at the same time.</h1>
             <p className="mt-4 max-w-[46ch] text-lg text-muted">
