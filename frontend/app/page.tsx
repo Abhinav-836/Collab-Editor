@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import LiveDemo from '@/components/LiveDemo';
 import StartPanel from '@/components/StartPanel';
 import Wordmark from '@/components/Wordmark';
+import StatusBarFooter from '@/components/StatusBarFooter';
 
 const FEATURES = [
   {
@@ -70,15 +71,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="border-t border-line">
-        <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-faint sm:px-6">
-          Built by{' '}
-          <a href="https://github.com/Abhinav-836" className="text-muted hover:text-text">
-            Abhinav Ashutosh
-          </a>
-          .
-        </div>
-      </footer>
+      <StatusBarFooter />
     </div>
   );
 }
