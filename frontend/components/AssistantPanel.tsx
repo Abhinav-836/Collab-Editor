@@ -57,7 +57,9 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), [messages, busy]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, busy]);
 
   const flash = (msg: string) => {
     setNotice(msg);

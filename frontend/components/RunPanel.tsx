@@ -57,7 +57,9 @@ export default function RunPanel({ getCode, language, runRequest, onClose }: Run
   }, [runRequest, run]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
-  useEffect(() => outputRef.current?.scrollTo({ top: 0 }), [result]);
+  useEffect(() => {
+    outputRef.current?.scrollTo({ top: 0 });
+  }, [result]);
 
   const ok = result && result.exitCode === 0 && !result.signal;
 
