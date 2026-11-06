@@ -59,8 +59,31 @@ export async function sendChat(payload: {
   history: Array<{ role: string; content: string }>;
 }): Promise<string> {
   const { ok, status, data } = await post('/api/ai/chat', payload);
-  if (!ok && !data?.response) throw new ApiError(data?.error || `HTTP ${status}`, status);
+  if (!ok) throw new ApiError(data?.error || `HTTP ${status}`, status);
   return data?.response || '';
+}
+
+/** Explain the selection (with the file as context), or the whole file if `selection` is empty. */
+export async function explainCode(payload: {
+  code: string;
+  selection: string;
+  language: string;
+  model: string;
+}): Promise<{ text: string; scope: 'selection' | 'file'; truncated: boolean }> {
+  const { ok, status, data } = await post('/api/ai/explain', payload);
+  if (!ok || !data?.success) throw new ApiError(data?.error || `HTTP ${status}`, status);
+  return { text: data.explanation || '', scope: data.scope === 'selection' ? 'selection' : 'file', truncated: !!data.truncated };
+}
+
+/** Review the whole file and get up to 5 concrete improvements. */
+export async function suggestImprovements(payload: {
+  code: string;
+  language: string;
+  model: string;
+}): Promise<{ text: string; truncated: boolean }> {
+  const { ok, status, data } = await post('/api/ai/suggest', payload);
+  if (!ok || !data?.success) throw new ApiError(data?.error || `HTTP ${status}`, status);
+  return { text: data.suggestions || '', truncated: !!data.truncated };
 }
 
 export interface RunResult {

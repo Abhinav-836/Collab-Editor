@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { AIModel, fetchModels, sendChat } from '@/lib/api';
+import { AIModel, ApiError, NETWORK_ERROR, explainCode, fetchModels, sendChat, suggestImprovements } from '@/lib/api';
 import { track } from '@/lib/track';
 
 interface Message {
@@ -13,6 +13,8 @@ interface Message {
 
 interface AssistantPanelProps {
   getCode: () => string;
+  /** Text the user has selected in the editor ('' if none). */
+  getSelection: () => string;
   language: string;
   /** Returns false if the editor can't accept the insert yet. */
   onInsertCode: (code: string) => boolean;
@@ -20,7 +22,8 @@ interface AssistantPanelProps {
 }
 
 const DEFAULT_MODEL = 'gemma4:31b-cloud';
-const FENCE_RE = /```[^\n`]*\r?\n([\s\S]*?)```/g;
+const FENCE_RE = /(`{3,})[^\n`]*\r?\n([\s\S]*?)\1/g;
+const TRUNCATED_NOTE = '\n\n(The file is very long, so only the first part was sent to the assistant.)';
 
 /** Split a reply into prose and fenced code blocks. */
 function splitReply(text: string): Array<{ kind: 'text' | 'code'; value: string }> {
@@ -28,16 +31,24 @@ function splitReply(text: string): Array<{ kind: 'text' | 'code'; value: string 
   let last = 0;
   for (const m of text.matchAll(FENCE_RE)) {
     if (m.index! > last) parts.push({ kind: 'text', value: text.slice(last, m.index) });
-    parts.push({ kind: 'code', value: m[1].replace(/\n$/, '') });
+    parts.push({ kind: 'code', value: m[2].replace(/\n$/, '') });
     last = m.index! + m[0].length;
   }
   if (last < text.length) parts.push({ kind: 'text', value: text.slice(last) });
   return parts;
 }
 
-const SUGGESTIONS = ['Explain what this file does', 'Find bugs in this code', 'Add comments to this function'];
+/** A readable message for any failed request. */
+function errorText(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  return NETWORK_ERROR;
+}
 
-export default function AssistantPanel({ getCode, language, onInsertCode, onClose }: AssistantPanelProps) {
+const lineCount = (text: string) => text.split('\n').length;
+
+const CHAT_STARTERS = ['Find bugs in this code', 'Add comments to this function', 'Write tests for this code'];
+
+export default function AssistantPanel({ getCode, getSelection, language, onInsertCode, onClose }: AssistantPanelProps) {
   const [models, setModels] = useState<AIModel[]>([]);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -66,29 +77,60 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
     setTimeout(() => setNotice(''), 2200);
   };
 
-  const send = async (text = input.trim()) => {
-    if (!text || busy) return;
-    const history = messages.filter((m) => !m.failed).slice(-5).map(({ role, content }) => ({ role, content }));
-    setMessages((prev) => [...prev, { id: nextId.current++, role: 'user', content: text }]);
-    setInput('');
+  const addMessage = (role: Message['role'], content: string, failed = false) =>
+    setMessages((prev) => [...prev, { id: nextId.current++, role, content, failed }]);
+
+  /**
+   * Shared flow for chat, explain and suggest: show what the user asked for,
+   * run the request, then show the reply — or the real error, never a
+   * made-up answer.
+   */
+  const ask = async (label: string, request: () => Promise<string>) => {
+    if (busy) return;
+    addMessage('user', label);
     setBusy(true);
-    track('ai_message', { model });
     try {
-      const reply = await sendChat({ message: text, code: getCode(), language, model, history });
-      setMessages((prev) => [...prev, { id: nextId.current++, role: 'assistant', content: reply || 'The assistant returned an empty reply.' }]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: nextId.current++,
-          role: 'assistant',
-          failed: true,
-          content: "The assistant couldn't be reached. The AI service may be down — try again in a minute."
-        }
-      ]);
+      const reply = await request();
+      addMessage('assistant', reply.trim() || 'The assistant returned an empty reply.');
+    } catch (err) {
+      addMessage('assistant', errorText(err), true);
     } finally {
       setBusy(false);
     }
+  };
+
+  const send = (text = input.trim()) => {
+    if (!text || busy) return;
+    // History is taken before this message is added, so it isn't sent twice
+    const history = messages.filter((m) => !m.failed).slice(-5).map(({ role, content }) => ({ role, content }));
+    setInput('');
+    track('ai_message', { model });
+    void ask(text, () => sendChat({ message: text, code: getCode(), language, model, history }));
+  };
+
+  const explain = () => {
+    const code = getCode();
+    if (!code.trim()) return flash('The file is empty. Write some code first.');
+    const selection = getSelection();
+    const hasSelection = selection.trim().length > 0;
+    const label = hasSelection
+      ? `Explain the selected code (${lineCount(selection)} line${lineCount(selection) === 1 ? '' : 's'})`
+      : 'Explain this file';
+    track('ai_explain', { model, scope: hasSelection ? 'selection' : 'file' });
+    void ask(label, async () => {
+      const result = await explainCode({ code, selection: hasSelection ? selection : '', language, model });
+      return result.text + (result.truncated ? TRUNCATED_NOTE : '');
+    });
+  };
+
+  const suggest = () => {
+    const code = getCode();
+    if (!code.trim()) return flash('The file is empty. Write some code first.');
+    track('ai_suggest', { model });
+    void ask('Suggest improvements for this file', async () => {
+      const result = await suggestImprovements({ code, language, model });
+      return result.text + (result.truncated ? TRUNCATED_NOTE : '');
+    });
   };
 
   const insert = async (code: string) => {
@@ -100,6 +142,9 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
       flash("Couldn't insert or copy the code.");
     }
   };
+
+  const actionBtn =
+    'flex-1 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-text hover:border-muted disabled:cursor-not-allowed disabled:opacity-40';
 
   return (
     <aside aria-label="AI assistant" className="flex h-full min-h-0 w-full flex-col border-l border-line bg-panel">
@@ -129,13 +174,16 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
         {messages.length === 0 && (
           <div>
-            <p className="text-muted">Ask about the file that&rsquo;s open. The assistant sees its current contents.</p>
+            <p className="text-muted">
+              Ask about the file that&rsquo;s open. The assistant sees its current contents. Select some code first and
+              <span className="text-text"> Explain</span> will explain just that part.
+            </p>
             <ul className="mt-4 space-y-2">
-              {SUGGESTIONS.map((s) => (
+              {CHAT_STARTERS.map((s) => (
                 <li key={s}>
                   <button
                     type="button"
-                    onClick={() => void send(s)}
+                    onClick={() => send(s)}
                     className="w-full rounded-lg border border-line px-3 py-2 text-left text-text hover:border-muted"
                   >
                     {s}
@@ -192,10 +240,30 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void send();
+          send();
         }}
         className="border-t border-line p-3"
       >
+        <div className="mb-2 flex gap-2">
+          <button
+            type="button"
+            onClick={explain}
+            disabled={busy}
+            title="Explains the code you've selected, or the whole file if nothing is selected"
+            className={actionBtn}
+          >
+            Explain
+          </button>
+          <button
+            type="button"
+            onClick={suggest}
+            disabled={busy}
+            title="Reviews the whole file and suggests up to 5 concrete fixes"
+            className={actionBtn}
+          >
+            Suggest improvements
+          </button>
+        </div>
         <label htmlFor="ai-input" className="sr-only">
           Message the assistant
         </label>
@@ -208,7 +276,7 @@ export default function AssistantPanel({ getCode, language, onInsertCode, onClos
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              send();
             }
           }}
           placeholder="Ask about this code. Shift+Enter for a new line."

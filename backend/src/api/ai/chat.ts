@@ -1,16 +1,16 @@
 import { Request, Response } from 'express';
-import { ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { AI_UNAVAILABLE } from './explain.js';
 
 export const chat = async (req: Request, res: Response) => {
-  try {
-    const { message, code, language, model, history } = req.body;
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ success: false, error: 'Message is required' });
-    }
-    const selectedModel = model || 'gemma4:31b-cloud';
-    const lang = language || 'javascript';
+  const { message, code, language, model, history } = req.body ?? {};
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ success: false, error: 'Message is required' });
+  }
+  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
+  const lang = typeof language === 'string' && language ? language : 'javascript';
 
-    const context = `
+  const context = `
 You are an AI coding assistant. The user is working with ${lang} code.
 
 Current code:
@@ -25,14 +25,13 @@ User: ${message}
 
 Assistant: Help with the code. Provide concise, actionable responses.`;
 
+  try {
     const response = await ollamaService.generateCompletion(context, selectedModel);
     return res.json({ success: true, response, model: selectedModel });
   } catch (error) {
-    console.error('Chat error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to get response',
-      response: 'Sorry, I encountered an error. Please try again.'
-    });
+    console.error('Chat error:', (error as Error).message);
+    // No `response` field here: the client must show this as a failure,
+    // not as an assistant reply.
+    return res.status(503).json({ success: false, error: AI_UNAVAILABLE });
   }
 };

@@ -15,6 +15,8 @@ export interface EditorHandle {
   getValue: () => string;
   /** Insert text at the cursor (replacing the selection). Returns false if not synced yet. */
   insertText: (text: string) => boolean;
+  /** The text currently selected by this user ('' if nothing is selected). */
+  getSelectedText: () => string;
 }
 
 interface EditorProps {
@@ -413,6 +415,13 @@ const CollabEditor = forwardRef<EditorHandle, EditorProps>(function CollabEditor
         editor.pushUndoStop();
         editor.focus();
         return true;
+      },
+      getSelectedText: () => {
+        const editor = editorRef.current;
+        const model = editor?.getModel();
+        const selection = editor?.getSelection();
+        if (!model || !selection || selection.isEmpty()) return '';
+        return model.getValueInRange(selection);
       }
     }),
     []

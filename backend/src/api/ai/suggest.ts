@@ -1,17 +1,30 @@
 import { Request, Response } from 'express';
-import { ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { AIInputError, BuiltPrompt, buildSuggestPrompt } from '../../services/aiPrompts.js';
+import { AI_UNAVAILABLE } from './explain.js';
 
+/**
+ * POST /api/ai/suggest { code, language, model? }
+ * Reviews the whole file and returns up to 5 concrete improvements, each with
+ * a pasteable code block. Returns 503 if the model can't be reached.
+ */
 export const getAISuggestions = async (req: Request, res: Response) => {
+  const { code, language, model } = req.body ?? {};
+
+  let built: BuiltPrompt;
   try {
-    const { code, language, position, model } = req.body;
-    const selectedModel = model || 'gemma4:31b-cloud';
-    if (!code || typeof code !== 'string') {
-      return res.status(400).json({ success: false, error: 'Code is required' });
-    }
-    const suggestions = await ollamaService.getCodeSuggestion(code, language || 'javascript', position, selectedModel);
-    return res.json({ success: true, suggestions, model: selectedModel });
+    built = buildSuggestPrompt({ code, language });
   } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({ success: false, error: 'Failed to generate suggestions' });
+    if (error instanceof AIInputError) return res.status(400).json({ success: false, error: error.message });
+    throw error;
+  }
+
+  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
+  try {
+    const suggestions = await ollamaService.generateCompletion(built.prompt, selectedModel, 0.3);
+    return res.json({ success: true, suggestions, truncated: built.truncated, model: selectedModel });
+  } catch (error) {
+    console.error('Suggest error:', (error as Error).message);
+    return res.status(503).json({ success: false, error: AI_UNAVAILABLE });
   }
 };

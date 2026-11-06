@@ -6,6 +6,8 @@ dotenv.config();
 const OLLAMA_CLOUD_URL = process.env.OLLAMA_CLOUD_URL || 'https://ollama.com/api';
 const API_KEY = process.env.OLLAMA_CLOUD_API_KEY || '';
 
+export const DEFAULT_MODEL = 'gemma4:31b-cloud';
+
 /**
  * Models known to work on Ollama's Free plan.
  * Ollama doesn't expose a "my entitled models" endpoint, so we maintain
@@ -15,7 +17,7 @@ const API_KEY = process.env.OLLAMA_CLOUD_API_KEY || '';
  * add its `-cloud` variant here instead.
  */
 const FREE_TIER_MODELS = new Set<string>([
-  'gemma4:31b-cloud'
+  DEFAULT_MODEL
   // Add more as you discover them, e.g.:
   // 'kimi-k3-cloud',
   // 'mistral-large-4-cloud',
@@ -35,6 +37,8 @@ const headers = () => ({
 
 /**
  * Call Ollama Cloud's /api/chat endpoint (non-streaming).
+ * Throws if the service is unreachable or returns no content — callers turn
+ * that into an error response. Nothing here invents a reply.
  */
 async function callChat(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
@@ -50,17 +54,12 @@ async function callChat(
 
     const content = response.data?.message?.content;
     if (!content) {
-      throw new Error(
-        `Unexpected response shape: ${JSON.stringify(response.data).slice(0, 200)}`
-      );
+      throw new Error(`Unexpected response shape: ${JSON.stringify(response.data).slice(0, 200)}`);
     }
     return content;
   } catch (error: any) {
     const detail =
-      error.response?.data?.error ||
-      error.response?.data?.message ||
-      error.response?.data ||
-      error.message;
+      error.response?.data?.error || error.response?.data?.message || error.response?.data || error.message;
     console.error('Ollama Cloud /chat error:', detail);
     throw new Error(typeof detail === 'string' ? detail : 'AI service unavailable');
   }
@@ -74,7 +73,6 @@ async function callChat(
 function normalizeToFreeModel(requested: string): string {
   if (FREE_TIER_MODELS.has(requested)) return requested;
 
-  // If the base name is in the set (e.g., "gemma4:31b"), try "-cloud"
   const [base, tag] = requested.split(':');
   if (tag) {
     const cloudVariant = `${base}:${tag}-cloud`;
@@ -85,131 +83,29 @@ function normalizeToFreeModel(requested: string): string {
   return requested;
 }
 
+const fallbackModelList = (): ModelInfo[] => [
+  { name: DEFAULT_MODEL, modified_at: new Date().toISOString(), size: 0, digest: '' }
+];
+
 export const ollamaService = {
-  async generateCompletion(prompt: string, model: string = 'gemma4:31b-cloud'): Promise<string> {
-    const resolved = normalizeToFreeModel(model);
-    return callChat([{ role: 'user', content: prompt }], resolved);
+  /** Single-turn completion. Lower temperature for explanations and reviews. */
+  async generateCompletion(prompt: string, model: string = DEFAULT_MODEL, temperature = 0.7): Promise<string> {
+    return callChat([{ role: 'user', content: prompt }], normalizeToFreeModel(model), temperature);
   },
 
-  /**
-   * Return only the models the current plan can actually use.
-   */
+  /** Return only the models the current plan can actually use. */
   async getAvailableModels(): Promise<ModelInfo[]> {
     try {
       const response = await axios.get(`${OLLAMA_CLOUD_URL}/tags`, {
         headers: headers(),
         timeout: 15_000
       });
-
       const allModels: ModelInfo[] = response.data.models || [];
-
-      // Filter to only models in the free tier whitelist
       const freeModels = allModels.filter((m) => FREE_TIER_MODELS.has(m.name));
-
-      // If whitelist matched something real, use it
-      if (freeModels.length > 0) {
-        return freeModels;
-      }
-
-      // Otherwise, fall back to a hardcoded list of known-good names
-      return [
-        { name: 'gemma4:31b-cloud', modified_at: new Date().toISOString(), size: 0, digest: '' }
-      ];
+      return freeModels.length > 0 ? freeModels : fallbackModelList();
     } catch (error) {
       console.error('Failed to fetch models:', (error as any).message);
-      // Fallback if Ollama Cloud is unreachable
-      return [
-        { name: 'gemma4:31b-cloud', modified_at: new Date().toISOString(), size: 0, digest: '' }
-      ];
+      return fallbackModelList();
     }
-  },
-
-  async getCodeSuggestion(
-    code: string,
-    language: string,
-    position: number,
-    model: string
-  ): Promise<string[]> {
-    const resolved = normalizeToFreeModel(model);
-    const prompt = `You are a code completion assistant. Complete the following ${language} code at position ${position}.
-
-\`\`\`${language}
-${code}
-\`\`\`
-
-Return exactly 3 short completion suggestions as a JSON array of strings. Example:
-["console.log(x)", "return x", "if (x) {}"]
-
-Return ONLY the JSON array, no prose.`;
-
-    try {
-      const result = await callChat([{ role: 'user', content: prompt }], resolved, 0.3);
-
-      try {
-        const parsed = JSON.parse(result);
-        if (Array.isArray(parsed)) return parsed.map(String);
-      } catch { /* not JSON */ }
-
-      const match = result.match(/\[[\s\S]*?\]/);
-      if (match) {
-        try {
-          const parsed = JSON.parse(match[0]);
-          if (Array.isArray(parsed)) return parsed.map(String);
-        } catch { /* ignore */ }
-      }
-
-      return [result.trim()];
-    } catch (error) {
-      console.error('AI suggestion error:', (error as Error).message);
-      return this.getFallbackSuggestions(language);
-    }
-  },
-
-  async explainCode(code: string, language: string, model: string): Promise<string> {
-    const resolved = normalizeToFreeModel(model);
-    const prompt = `Explain the following ${language} code in simple terms.
-
-\`\`\`${language}
-${code}
-\`\`\`
-
-Provide a concise explanation of what it does and its key features.`;
-
-    // Let errors propagate: api/ai/explain.ts catches them, builds a local
-    // fallback and correctly reports aiGenerated: false.
-    return callChat([{ role: 'user', content: prompt }], resolved, 0.5);
-  },
-
-  getFallbackSuggestions(language: string): string[] {
-    const suggestions: Record<string, string[]> = {
-      javascript: [
-        'console.log()',
-        'if (condition) { }',
-        'for (let i = 0; i < arr.length; i++) { }',
-        'function name() { }'
-      ],
-      typescript: [
-        'interface Props { }',
-        'const [state, setState] = useState()',
-        'type MyType = { }'
-      ],
-      python: [
-        'print()',
-        'if __name__ == "__main__":',
-        'for item in list:',
-        'def function():'
-      ],
-      java: [
-        'System.out.println()',
-        'public static void main(String[] args) { }',
-        'try-catch block'
-      ]
-    };
-    return suggestions[language] || ['// Write your code here'];
-  },
-
-  getFallbackExplanation(code: string, language: string): string {
-    const lines = code.split('\n').length;
-    return `${lines} lines of ${language} code. Add comments and handle edge cases for better quality.`;
   }
 };

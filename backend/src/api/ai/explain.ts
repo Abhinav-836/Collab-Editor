@@ -1,62 +1,38 @@
 import { Request, Response } from 'express';
-import { ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { AIInputError, BuiltPrompt, buildExplainPrompt } from '../../services/aiPrompts.js';
 
+export const AI_UNAVAILABLE = 'The AI service is unavailable right now. Try again in a minute.';
+
+/**
+ * POST /api/ai/explain { code, selection?, language, model? }
+ * Explains the selection (with the file as context), or the whole file.
+ * If the model can't be reached this returns 503 — it never sends back a
+ * made-up explanation.
+ */
 export const explainCode = async (req: Request, res: Response) => {
+  const { code, selection, language, model } = req.body ?? {};
+
+  let built: BuiltPrompt;
   try {
-    const { code, language, model } = req.body;
-    const selectedModel = model || 'gemma4:31b-cloud';
-
-    if (!code || typeof code !== 'string') {
-      return res.status(400).json({ success: false, error: 'Code is required' });
-    }
-
-    const lang = language || 'javascript';
-    let explanation: any;
-    let aiGenerated = false;
-
-    try {
-      const aiExplanation = await ollamaService.explainCode(code, lang, selectedModel);
-      explanation = {
-        summary: aiExplanation,
-        complexity: code.split('\n').length > 100 ? 'Complex' : code.split('\n').length > 30 ? 'Moderate' : 'Simple',
-        lineCount: code.split('\n').length,
-        language: lang,
-        suggestions: ['Add comments for clarity', 'Consider error handling', 'Add type checking']
-      };
-      aiGenerated = true;
-    } catch {
-      explanation = generateFallbackExplanation(code, lang);
-    }
-
-    return res.json({ success: true, explanation, aiGenerated, model: selectedModel });
+    built = buildExplainPrompt({ code, selection, language });
   } catch (error) {
-    console.error('Error explaining code:', error);
-    return res.status(500).json({ success: false, error: 'Failed to explain code' });
+    if (error instanceof AIInputError) return res.status(400).json({ success: false, error: error.message });
+    throw error;
+  }
+
+  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
+  try {
+    const explanation = await ollamaService.generateCompletion(built.prompt, selectedModel, 0.3);
+    return res.json({
+      success: true,
+      explanation,
+      scope: built.scope,
+      truncated: built.truncated,
+      model: selectedModel
+    });
+  } catch (error) {
+    console.error('Explain error:', (error as Error).message);
+    return res.status(503).json({ success: false, error: AI_UNAVAILABLE });
   }
 };
-
-function generateFallbackExplanation(code: string, language: string) {
-  const lines = code.split('\n');
-  const hasFunction = code.includes('function') || code.includes('def');
-  const hasLoop = code.includes('for') || code.includes('while');
-  const hasConditional = code.includes('if') || code.includes('else');
-  const hasClass = code.includes('class') || code.includes('interface');
-
-  let explanation = '';
-  const suggestions: string[] = [];
-
-  if (hasFunction) { explanation += 'This code defines functions. '; suggestions.push('Add JSDoc comments'); }
-  if (hasLoop) { explanation += 'It uses loops. '; suggestions.push('Consider map/filter/reduce'); }
-  if (hasConditional) explanation += 'The code uses conditionals. ';
-  if (hasClass) { explanation += 'Object-oriented design used. '; suggestions.push('Follow SOLID principles'); }
-  if (!explanation) explanation = 'Simple statements or expressions. ';
-
-  return {
-    summary: explanation + `Written in ${language}.`,
-    complexity: lines.length > 50 ? 'Moderate' : 'Simple',
-    lineCount: lines.length,
-    language,
-    hasFunctions: hasFunction,
-    suggestions
-  };
-}

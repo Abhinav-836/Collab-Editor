@@ -84,6 +84,7 @@ export default function RoomView({ roomId, userName }: { roomId: string; userNam
   const lang = getLanguage(language);
   const getCode = useCallback(() => editorRef.current?.getValue() ?? '', []);
   const insertCode = useCallback((code: string) => editorRef.current?.insertText(code) ?? false, []);
+  const getSelection = useCallback(() => editorRef.current?.getSelectedText() ?? '', []);
 
   const copyInvite = async () => {
     const link = `${window.location.origin}/room/${encodeURIComponent(roomId)}`;
@@ -214,7 +215,13 @@ export default function RoomView({ roomId, userName }: { roomId: string; userNam
         </div>
         {showAssistant && (
           <div className="absolute inset-0 z-20 md:static md:inset-auto md:w-[24rem] md:shrink-0">
-            <AssistantPanel getCode={getCode} language={language} onInsertCode={insertCode} onClose={() => setShowAssistant(false)} />
+            <AssistantPanel
+              getCode={getCode}
+              getSelection={getSelection}
+              language={language}
+              onInsertCode={insertCode}
+              onClose={() => setShowAssistant(false)}
+            />
           </div>
         )}
       </div>

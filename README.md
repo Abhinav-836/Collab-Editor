@@ -33,7 +33,12 @@ The server holds the single source of truth for each room, so two people typing 
 - **Live presence** — see who's in the room, each with their own colour and cursor
 - **10 languages** with syntax highlighting: JavaScript, TypeScript, Python, Java, C++, Go, Rust, HTML, CSS, JSON — changing the language syncs to everyone in the room
 - **Run code** for JavaScript, TypeScript, Python, Java, C++, Go and Rust, with stdin support (10 runs per minute per IP)
-- **AI assistant** — chat about the code in the room (it's sent the current file and language with each message) and insert its answers at your cursor; pick from the Ollama Cloud models your plan can use (default `gemma4:31b-cloud`). The API also has `explain` and `suggest` endpoints that the panel doesn't use yet
+- **AI assistant** — three ways to use it, all with your current file and language as context:
+  - **Explain**: explains the code you've selected, or the whole file if nothing is selected
+  - **Suggest improvements**: reviews the file and gives up to 5 concrete fixes, most important first, each with a pasteable code block
+  - **Chat**: ask anything about the code
+
+  Any code block in a reply can be inserted at your cursor. Pick from the Ollama Cloud models your plan can use (default `gemma4:31b-cloud`). If the AI service is down you get a clear error, never a made-up answer
 - Works on mobile
 
 ## Run locally
@@ -108,7 +113,9 @@ npm run dev
 | `POST` | `/api/rooms/:id/join` | Exchange a room password for an access token |
 | `DELETE` | `/api/rooms/:id` | Delete a room |
 | `POST` | `/api/run` | Run code (`language`, `code`, `stdin`) |
-| `POST` | `/api/ai/chat`, `/api/ai/explain`, `/api/ai/suggest` | AI assistant |
+| `POST` | `/api/ai/explain` | Explain `selection` (with `code` as context), or the whole `code` |
+| `POST` | `/api/ai/suggest` | Up to 5 concrete improvements for `code` |
+| `POST` | `/api/ai/chat` | Chat about `code` (`message`, `history`) |
 | `GET` | `/api/ai/models` | Models available on your Ollama plan |
 | WS | `/ws?roomId=…&userId=…&userName=…` | Messages: `operation`, `get_document`, `cursor`, `change_language` |
 
@@ -119,7 +126,7 @@ backend/src/
   index.ts          Express + WebSocket server, graceful shutdown
   ot/               TextOperation (apply / compose / transform) and the server document
   websocket/        connection manager and message handler
-  services/         persistence, room passwords, code runner, Ollama client
+  services/         persistence, room passwords, code runner, Ollama client, AI prompts
   api/              rooms, run, ai, health
   db/               PostgreSQL queries + migrations, Redis presence
   __tests__/        OT, persistence, WebSocket and feature tests (Vitest)
@@ -136,7 +143,7 @@ cd backend
 npm test
 ```
 
-36 tests covering OT transform/compose correctness, convergence under concurrent edits, persistence and the WebSocket protocol.
+45 tests covering OT transform/compose correctness, convergence under concurrent edits, persistence, the WebSocket protocol and the AI endpoints (including that a failed AI call never returns a fabricated answer).
 
 ## Limitations
 
