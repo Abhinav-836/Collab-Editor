@@ -1,5 +1,7 @@
 # Collab Editor
 
+[![CI](https://github.com/Abhinav-836/Collab-Editor/actions/workflows/ci.yml/badge.svg)](https://github.com/Abhinav-836/Collab-Editor/actions/workflows/ci.yml)
+
 A real-time collaborative code editor. Create a room, share the link, and everyone edits the same file at the same time — with live cursors, a built-in code runner for seven languages, and an AI assistant that can see the code you're working on.
 
 **Live:** [collab-editor-ruby-beta.vercel.app](https://collab-editor-ruby-beta.vercel.app)
@@ -145,6 +147,8 @@ npm test
 
 45 tests covering OT transform/compose correctness, convergence under concurrent edits, persistence, the WebSocket protocol and the AI endpoints (including that a failed AI call never returns a fabricated answer).
 
+GitHub Actions runs the typecheck and all tests, and builds the frontend, on every push (`.github/workflows/ci.yml`).
+
 ## Limitations
 
 - One file per room.
@@ -155,3 +159,7 @@ npm test
 ---
 
 Built by **Abhinav Ashutosh** · [GitHub](https://github.com/Abhinav-836)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
