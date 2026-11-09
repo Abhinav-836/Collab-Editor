@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService, normalizeToFreeModel } from '../../services/ollamaService.js';
 import { AIInputError, BuiltPrompt, buildExplainPrompt } from '../../services/aiPrompts.js';
 
 export const AI_UNAVAILABLE = 'The AI service is unavailable right now. Try again in a minute.';
@@ -21,7 +21,7 @@ export const explainCode = async (req: Request, res: Response) => {
     throw error;
   }
 
-  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
+  const selectedModel = normalizeToFreeModel(typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL);
   try {
     const explanation = await ollamaService.generateCompletion(built.prompt, selectedModel, 0.3);
     return res.json({

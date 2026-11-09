@@ -9,18 +9,16 @@ const API_KEY = process.env.OLLAMA_CLOUD_API_KEY || '';
 export const DEFAULT_MODEL = 'gemma4:31b-cloud';
 
 /**
- * Models known to work on Ollama's Free plan.
- * Ollama doesn't expose a "my entitled models" endpoint, so we maintain
- * this list. Update as Ollama changes their free tier.
- *
- * Tip: If you try a new model and get "not included in your free usage",
- * add its `-cloud` variant here instead.
+ * Models visitors may pick. Ollama Cloud bills per token, so only models on
+ * this list are ever called; anything else falls back to DEFAULT_MODEL.
+ * Add more with OLLAMA_ALLOWED_MODELS=model1,model2 on Render.
  */
 const FREE_TIER_MODELS = new Set<string>([
-  DEFAULT_MODEL
-  // Add more as you discover them, e.g.:
-  // 'kimi-k3-cloud',
-  // 'mistral-large-4-cloud',
+  DEFAULT_MODEL,
+  ...(process.env.OLLAMA_ALLOWED_MODELS || '')
+    .split(',')
+    .map((m) => m.trim())
+    .filter(Boolean)
 ]);
 
 export interface ModelInfo {
@@ -70,7 +68,7 @@ async function callChat(
  * For the free plan, prefer the "-cloud" version. If the caller passes
  * "gemma4:31b", we automatically try "gemma4:31b-cloud".
  */
-function normalizeToFreeModel(requested: string): string {
+export function normalizeToFreeModel(requested: string): string {
   if (FREE_TIER_MODELS.has(requested)) return requested;
 
   const [base, tag] = requested.split(':');
@@ -79,8 +77,8 @@ function normalizeToFreeModel(requested: string): string {
     if (FREE_TIER_MODELS.has(cloudVariant)) return cloudVariant;
   }
 
-  // Otherwise, keep as-is — callChat will throw and we surface the error
-  return requested;
+  // Not on the list: never let a visitor pick a (possibly expensive) model
+  return DEFAULT_MODEL;
 }
 
 const fallbackModelList = (): ModelInfo[] => [

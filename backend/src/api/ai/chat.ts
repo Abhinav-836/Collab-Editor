@@ -1,25 +1,36 @@
 import { Request, Response } from 'express';
-import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService, normalizeToFreeModel } from '../../services/ollamaService.js';
 import { AI_UNAVAILABLE } from './explain.js';
+import { MAX_AI_CODE_CHARS } from '../../services/aiPrompts.js';
+
+// Caps on what goes into one prompt (each token is paid for)
+const MAX_MESSAGE_CHARS = 4_000;
+const MAX_HISTORY_TURNS = 10;
+const MAX_HISTORY_CHARS = 2_000;
+const clip = (s: unknown, n: number) => String(s ?? '').slice(0, n);
 
 export const chat = async (req: Request, res: Response) => {
   const { message, code, language, model, history } = req.body ?? {};
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ success: false, error: 'Message is required' });
   }
-  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
-  const lang = typeof language === 'string' && language ? language : 'javascript';
+  if (message.length > MAX_MESSAGE_CHARS) {
+    return res.status(400).json({ success: false, error: `Keep messages under ${MAX_MESSAGE_CHARS} characters` });
+  }
+  const selectedModel = normalizeToFreeModel(typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL);
+  const lang = typeof language === 'string' && language ? clip(language, 40) : 'javascript';
+  const recent = Array.isArray(history) ? history.slice(-MAX_HISTORY_TURNS) : [];
 
   const context = `
 You are an AI coding assistant. The user is working with ${lang} code.
 
 Current code:
 \`\`\`${lang}
-${code || '// No code yet'}
+${clip(code, MAX_AI_CODE_CHARS) || '// No code yet'}
 \`\`\`
 
 Conversation history:
-${Array.isArray(history) ? history.map((h: any) => `${h.role}: ${h.content}`).join('\n') : 'No previous messages'}
+${recent.length ? recent.map((h: any) => `${clip(h?.role, 20)}: ${clip(h?.content, MAX_HISTORY_CHARS)}`).join('\n') : 'No previous messages'}
 
 User: ${message}
 

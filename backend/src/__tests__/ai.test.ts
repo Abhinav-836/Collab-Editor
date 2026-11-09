@@ -9,6 +9,7 @@ const ai = vi.hoisted(() => ({
 
 vi.mock('../services/ollamaService.js', () => ({
   DEFAULT_MODEL: 'gemma4:31b-cloud',
+  normalizeToFreeModel: (m: string) => m,
   ollamaService: {
     generateCompletion: (prompt: string) => {
       ai.calls += 1;

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { DEFAULT_MODEL, ollamaService } from '../../services/ollamaService.js';
+import { DEFAULT_MODEL, ollamaService, normalizeToFreeModel } from '../../services/ollamaService.js';
 import { AIInputError, BuiltPrompt, buildSuggestPrompt } from '../../services/aiPrompts.js';
 import { AI_UNAVAILABLE } from './explain.js';
 
@@ -19,7 +19,7 @@ export const getAISuggestions = async (req: Request, res: Response) => {
     throw error;
   }
 
-  const selectedModel = typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL;
+  const selectedModel = normalizeToFreeModel(typeof model === 'string' && model.trim() ? model.trim() : DEFAULT_MODEL);
   try {
     const suggestions = await ollamaService.generateCompletion(built.prompt, selectedModel, 0.3);
     return res.json({ success: true, suggestions, truncated: built.truncated, model: selectedModel });
