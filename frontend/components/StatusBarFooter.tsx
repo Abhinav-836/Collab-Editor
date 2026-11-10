@@ -23,6 +23,12 @@ export default function StatusBarFooter() {
           <a href="https://github.com/Abhinav-836/collab-editor" className={`${seg} hover:bg-raised hover:text-text`}>
             source
           </a>
+          <Link href="/privacy" className={`${seg} hover:bg-raised hover:text-text`}>
+            privacy
+          </Link>
+          <Link href="/terms" className={`${seg} hover:bg-raised hover:text-text`}>
+            terms
+          </Link>
         </div>
         <div className="flex flex-wrap items-stretch">
           <span className={`${seg} hidden sm:flex`}>7 runnable languages</span>

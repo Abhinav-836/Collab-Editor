@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, createRoom, joinRoom, NETWORK_ERROR } from '@/lib/api';
@@ -182,6 +183,11 @@ export default function StartPanel() {
         {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" />}
         {mode === 'create' ? (busy ? 'Creating room…' : 'Create room') : busy ? 'Joining…' : needsPassword ? 'Unlock and join' : 'Join room'}
       </button>
+      <p className="mt-3 text-center text-xs text-muted">
+        By continuing you agree to the{' '}
+        <Link href="/terms" className="underline underline-offset-2 hover:text-text">Terms</Link> and{' '}
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-text">Privacy policy</Link>. Don&rsquo;t put secrets in a room.
+      </p>
     </form>
   );
 }

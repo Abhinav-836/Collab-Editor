@@ -178,6 +178,9 @@ export default function AssistantPanel({ getCode, getSelection, language, onInse
               Ask about the file that&rsquo;s open. The assistant sees its current contents. Select some code first and
               <span className="text-text"> Explain</span> will explain just that part.
             </p>
+            <p className="mt-2 text-xs text-muted">
+              Your code and questions are sent to an AI model hosted by Ollama. Don&rsquo;t include passwords or keys.
+            </p>
             <ul className="mt-4 space-y-2">
               {CHAT_STARTERS.map((s) => (
                 <li key={s}>

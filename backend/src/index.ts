@@ -12,7 +12,8 @@ import { healthCheck, detailedHealthCheck, setActiveRoomCounter } from './api/he
 import { aiRoutes } from './api/ai/index.js';
 import { createRoom, getRooms } from './api/rooms/createRoom.js';
 import { getRoom, getRoomStats } from './api/rooms/getRoom.js';
-import { deleteRoom } from './api/rooms/deleteRoom.js';
+// Imported for its hourly clean-up of empty rooms
+import './api/rooms/deleteRoom.js';
 import { joinRoom } from './api/rooms/access.js';
 import { runCode } from './api/run.js';
 
@@ -80,7 +81,8 @@ app.post(
 
 // Code execution (proxied to Wandbox) — 10 runs per minute per IP
 app.post('/api/run', rateLimiter(10, 60 * 1000, { message: 'Too many runs. Wait a moment.' }), runCode);
-app.delete('/api/rooms/:id', deleteRoom);
+// No public DELETE /api/rooms/:id: it had no access check, so anyone could
+// delete any room (even a locked one) and reopen it without the password.
 
 // Unknown API routes → JSON 404 (instead of Express' HTML page)
 app.use('/api', (_req, res) => res.status(404).json({ success: false, error: 'Not found' }));
