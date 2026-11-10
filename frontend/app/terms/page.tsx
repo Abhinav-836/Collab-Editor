@@ -8,7 +8,7 @@ export default function Terms() {
   return (
     <LegalPage title="Terms of service">
       <p>
-        These terms cover your use of Collab Editor, a free tool built by Abhinav Ashutosh (StrattonTrade). By creating
+        These terms cover your use of Collab Editor, a free tool built by Abhinav Ashutosh (Kavorin Tech). By creating
         or joining a room, you agree to them.
       </p>
 
