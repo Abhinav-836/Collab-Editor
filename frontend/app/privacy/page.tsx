@@ -7,7 +7,7 @@ export default function Privacy() {
   return (
     <LegalPage title="Privacy policy">
       <p>
-        Collab Editor is a free real-time code editor built by Abhinav Ashutosh (StrattonTrade). There are no accounts.
+        Collab Editor is a free real-time code editor built by Abhinav Ashutosh (Kavorin Tech). There are no accounts.
         This page explains what happens to what you type. We don&rsquo;t sell data or use it for advertising.
       </p>
 
