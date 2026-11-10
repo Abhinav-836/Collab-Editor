@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import LegalPage, { CONTACT } from '@/components/LegalPage';
 
-export const metadata: Metadata = { title: 'Privacy policy · Collab Editor' };
+export const metadata: Metadata = { title: 'Privacy policy' };
 
 export default function Privacy() {
   return (
